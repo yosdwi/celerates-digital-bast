@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conform - Timesheet Update Alert</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f8fafc;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            padding: 32px 24px;
+            text-align: center;
+            position: relative;
+        }
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #10b981, #3b82f6, #8b5cf6);
+        }
+        .header h1 {
+            color: white;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .header .subtitle {
+            color: #d1fae5;
+            font-size: 16px;
+            font-weight: 400;
+        }
+        .content {
+            padding: 32px 24px;
+        }
+        .alert-badge {
+            display: inline-flex;
+            align-items: center;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        .alert-badge::before {
+            content: '🔄';
+            margin-right: 8px;
+        }
+        .employee-info {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .employee-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .employee-avatar {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 18px;
+            margin-right: 16px;
+        }
+        .employee-details h3 {
+            color: #1f2937;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .employee-email {
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .update-details {
+            background-color: white;
+            border-left: 4px solid #10b981;
+            padding: 16px;
+            border-radius: 0 8px 8px 0;
+            margin: 16px 0;
+        }
+        .update-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        .timesheet-date {
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .update-time {
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .changes-list {
+            background-color: #f1f5f9;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        .changes-title {
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 12px;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .change-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .change-item:last-child {
+            border-bottom: none;
+        }
+        .change-field {
+            font-weight: 500;
+            color: #4b5563;
+        }
+        .change-values {
+            font-size: 14px;
+        }
+        .old-value {
+            color: #ef4444;
+            text-decoration: line-through;
+        }
+        .new-value {
+            color: #10b981;
+            font-weight: 500;
+        }
+        .action-section {
+            text-align: center;
+            margin: 32px 0;
+        }
+        .btn-primary {
+            display: inline-block;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+        }
+        .footer {
+            background-color: #f9fafb;
+            padding: 24px;
+            text-align: center;
+            border-top: 1px solid #e5e7eb;
+        }
+        .footer-text {
+            color: #6b7280;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .footer-brand {
+            color: #9ca3af;
+            font-size: 12px;
+        }
+        .logo {
+            display: inline-block;
+            background: linear-gradient(135deg, #10b981, #3b82f6);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        @media (max-width: 600px) {
+            .container {
+                margin: 0;
+                border-radius: 0;
+            }
+            .header, .content, .footer {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+            .employee-header {
+                flex-direction: column;
+                text-align: center;
+            }
+            .employee-avatar {
+                margin-right: 0;
+                margin-bottom: 12px;
+            }
+            .update-meta {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .change-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Timesheet Updated</h1>
+            <div class="subtitle">Employee has made changes to their timesheet</div>
+        </div>
+
+        <div class="content">
+            <div class="alert-badge">Update Alert</div>
+
+            <div class="employee-info">
+                <div class="employee-header">
+                    <div class="employee-avatar">{{employee_initial}}</div>
+                    <div class="employee-details">
+                        <h3>{{employee_name}}</h3>
+                        <div class="employee-email">{{employee_email}}</div>
+                    </div>
+                </div>
+
+                <div class="update-details">
+                    <div class="update-meta">
+                        <div class="timesheet-date">📅 {{timesheet_date}}</div>
+                        <div class="update-time">🕒 {{update_time}}</div>
+                    </div>
+                </div>
+            </div>
+
+            {{#if has_changes}}
+            <div class="changes-list">
+                <div class="changes-title">Modified Fields</div>
+                {{changes_content}}
+            </div>
+            {{/if}}
+
+            <div class="action-section">
+                <a href="{{timesheet_url}}" class="btn-primary">
+                    Review Changes →
+                </a>
+            </div>
+
+            <p style="color: #6b7280; font-size: 14px; margin-top: 24px;">
+                This is an automated notification to keep you informed of timesheet updates.
+                Please review the changes and contact the employee if needed.
+            </p>
+        </div>
+
+        <div class="footer">
+            <div class="logo">CONFORM</div>
+            <div class="footer-text">
+                Automated timesheet monitoring system
+            </div>
+            <div class="footer-brand">
+                © 2026 Celerates Apps. All rights reserved.
+            </div>
+        </div>
+    </div>
+</body>
+</html>

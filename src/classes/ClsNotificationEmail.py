@@ -1,5 +1,7 @@
 import resend
 import logging
+import re
+from pathlib import Path
 from sqlalchemy import create_engine, text
 from src import config
 
@@ -12,7 +14,15 @@ class ClsNotificationEmail:
 
         with open(config.QUERIES_PATH / "get_pending_comment_notifications.sql") as f:
             self.comment_details_query = text(f.read())
-            
+
+        comment_template_path = Path(__file__).parent.parent / "templates" / "comment_notification.html"
+        with open(comment_template_path, 'r', encoding='utf-8') as f:
+            self.comment_template = f.read()
+
+        update_template_path = Path(__file__).parent.parent / "templates" / "update_notification.html"
+        with open(update_template_path, 'r', encoding='utf-8') as f:
+            self.update_template = f.read()
+
     def get_pending_comments(self) -> list:
         data = []
         try:
@@ -23,76 +33,31 @@ class ClsNotificationEmail:
             logging.error(f"Gagal mengambil komentar tertunda: {e}")
         return data
 
+    def _get_sender_initial(self, email: str) -> str:
+        if '@' in email:
+            return email.split('@')[0][:2].upper()
+        return email[:2].upper()
+
     def send_comment_via_email(self, sender_email: str, target_email: str, message: str, timesheet_id: str):
-        html_template = f"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Conform Comment Notification</title>
-        </head>
-        <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
-            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f5f5f5; padding: 40px 20px;">
-                <tr>
-                    <td align="center">
-                        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden;">
-                            <!-- Header -->
-                            <tr>
-                                <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px 40px; text-align: center;">
-                                    <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
-                                        💬 Ada komentar di timesheet mu!
-                                    </h1>
-                                </td>
-                            </tr>
+        timesheet_url = f"https://conform.celeratesapps.com/dashboard/#/nc/pc38r6u1npuq0ul/m99ucznm06bhtf1/vw8qp9dv90xkg5ty/timesheet-timesheet?rowId={timesheet_id}"
 
-                            <!-- Content -->
-                            <tr>
-                                <td style="padding: 40px;">
-                                    <p style="margin: 0 0 20px 0; color: #333333; font-size: 16px; line-height: 1.5;">
-                                        Kamu mendapat komentar pada timesheet di Conform dari <strong style="color: #667eea;">{sender_email}</strong>
-                                    </p>
+        template_vars = {
+            'sender_initial': self._get_sender_initial(sender_email),
+            'sender_email': sender_email,
+            'message': message,
+            'timesheet_url': timesheet_url,
+        }
 
-                                    <!-- Comment Box -->
-                                    <div style="background-color: #f8f9fa; border-left: 4px solid #667eea; padding: 20px; margin: 20px 0; border-radius: 4px;">
-                                        <p style="margin: 0; color: #555555; font-size: 15px; line-height: 1.6; white-space: pre-wrap;">
-                                            {message}
-                                        </p>
-                                    </div>
-
-                                    <!-- Action Button -->
-                                    <div style="text-align: center; margin: 30px 0 20px 0;">
-                                        <a href="https://conform.celeratesapps.com/dashboard/#/nc/pc38r6u1npuq0ul/m99ucznm06bhtf1/vw8qp9dv90xkg5ty/timesheet-timesheet?rowId={timesheet_id}" 
-                                            style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 15px;">
-                                            Lihat di Conform
-                                        </a>
-                                    </div>
-                                </td>
-                            </tr>
-
-                            <!-- Footer -->
-                            <tr>
-                                <td style="background-color: #f8f9fa; padding: 20px 40px; text-align: center; border-top: 1px solid #e9ecef;">
-                                    <p style="margin: 0; color: #999999; font-size: 13px; line-height: 1.5;">
-                                        This is an automated notification from Conform<br>
-                                        © 2025 Celerates Apps. All rights reserved.
-                                    </p>
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
-        """
+        html_content = self.comment_template
+        for var_name, var_value in template_vars.items():
+            html_content = html_content.replace(f"{{{{{var_name}}}}}", str(var_value))
         try:
             r = resend.Emails.send(
                 {
-                    "from": "yoses.maheswara@gmail.com",
+                    "from": "Conform Team <conformnotification@celeratesapps.com>",
                     "to": target_email,
-                    "subject": "Conform Comment Notification",
-                    "html": html_template,
+                    "subject": "💬 New comment on your timesheet",
+                    "html": html_content,
                 }
             )
             logging.info(f"Email berhasil terkirim: {r}")
@@ -100,3 +65,109 @@ class ClsNotificationEmail:
         except Exception as e:
             logging.error(f"Gagal mengirim email ke {target_email}: {e}")
             return None
+
+    def send_update_notification_to_team(self, employee_name: str, employee_email: str, timesheet_date: str, timesheet_id: str, changes_data: dict = None):
+        from datetime import datetime
+
+        timesheet_url = f"https://conform.celeratesapps.com/dashboard/#/nc/pc38r6u1npuq0ul/m99ucznm06bhtf1/vw8qp9dv90xkg5ty/timesheet-timesheet?rowId={timesheet_id}"
+
+        changes_html = ""
+        if changes_data:
+            changes_html = self._format_changes_html(changes_data)
+
+        template_vars = {
+            'employee_initial': self._get_sender_initial(employee_name or employee_email),
+            'employee_name': employee_name or 'Unknown Employee',
+            'employee_email': employee_email,
+            'timesheet_date': timesheet_date,
+            'update_time': datetime.now().strftime('%B %d, %Y at %I:%M %p'),
+            'timesheet_url': timesheet_url,
+            'has_changes': 'true' if changes_data else 'false',
+            'changes_content': changes_html,
+        }
+
+        html_content = self.update_template
+        for var_name, var_value in template_vars.items():
+            html_content = html_content.replace(f"{{{{{var_name}}}}}", str(var_value))
+
+        html_content = self._process_conditionals(html_content, changes_data is not None)
+
+        try:
+            team_emails = [
+                "conform-team@celeratesapps.com",
+                "yoses.maheswara@gmail.com"
+            ]
+
+            results = []
+            for email in team_emails:
+                r = resend.Emails.send(
+                    {
+                        "from": "Conform System <conformnotification@celeratesapps.com>",
+                        "to": email,
+                        "subject": f"📊 {employee_name} updated timesheet for {timesheet_date}",
+                        "html": html_content,
+                    }
+                )
+                results.append(r)
+                logging.info(f"Update notification sent to team: {email}")
+
+            return results
+
+        except Exception as e:
+            logging.error(f"Failed to send update notification to team: {e}")
+            return None
+
+    def _format_changes_html(self, changes: dict) -> str:
+        if not changes:
+            return ""
+
+        html_parts = []
+        for field, change in changes.items():
+            old_value = change.get('old', '')
+            new_value = change.get('new', '')
+
+            html_parts.append(f"""
+                <div class="change-item">
+                    <span class="change-field">{field}</span>
+                    <div class="change-values">
+                        <span class="old-value">{old_value}</span> →
+                        <span class="new-value">{new_value}</span>
+                    </div>
+                </div>
+            """)
+
+        return ''.join(html_parts)
+
+    def _process_conditionals(self, html: str, has_changes: bool) -> str:
+        import re
+
+        if_pattern = r'\{\{#if has_changes\}\}(.*?)\{\{/if\}\}'
+        if has_changes:
+            html = re.sub(if_pattern, r'\1', html, flags=re.DOTALL)
+        else:
+            html = re.sub(if_pattern, '', html, flags=re.DOTALL)
+
+        return html
+
+    def notify_timesheet_update(self, timesheet_id: str, employee_data: dict = None, changes: dict = None):
+        if not employee_data:
+            logging.warning("No employee data provided for update notification")
+            return False
+
+        employee_name = employee_data.get('name', '')
+        employee_email = employee_data.get('email', '')
+        timesheet_date = employee_data.get('date', '')
+
+        if not all([employee_email, timesheet_date]):
+            logging.warning("Missing required employee data for update notification")
+            return False
+
+        result = self.send_update_notification_to_team(
+            employee_name=employee_name,
+            employee_email=employee_email,
+            timesheet_date=timesheet_date,
+            timesheet_id=timesheet_id,
+            changes_data=changes
+        )
+
+        return result is not None

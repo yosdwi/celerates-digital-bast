@@ -44,6 +44,10 @@ services:
       ofelia.job-exec.step_08_send_comment_notifications.container: "digital-bast-app"
       ofelia.job-exec.step_08_send_comment_notifications.command: "python main.py --step step_08_send_comment_notifications"
 
+      ofelia.job-exec.step_09_send_update_notifications.schedule: "45 * * * *" # Runs at minute 45 of every hour
+      ofelia.job-exec.step_09_send_update_notifications.container: "digital-bast-app"
+      ofelia.job-exec.step_09_send_update_notifications.command: "python main.py --step step_09_send_update_notifications"
+
   scheduler:
     image: mcuadros/ofelia:latest
     container_name: digital-bast-scheduler

@@ -56,7 +56,6 @@ def main():
         print(f"--- Step {step_name} failed ---", file=sys.stderr)
         error_details = traceback.format_exc()
         print(error_details, file=sys.stderr)
-        # Truncate details to prevent exceeding payload limits
         healthcheck_ping("fail", step_name, details=error_details[:10000])
         sys.exit(1)
 
