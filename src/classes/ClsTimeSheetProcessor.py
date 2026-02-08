@@ -3,6 +3,8 @@ from datetime import datetime
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
 import time
+import random
+from googleapiclient.errors import HttpError
 
 from src import config
 
@@ -12,6 +14,24 @@ class ClsTimeSheetProcessor:
         self.mapping_config = config.SHEET_MAPPING
         self.service = self._authenticate()
         self.iot_task_list = config.TASKLIST_IOT
+
+    def _retry_with_backoff(self, func, max_retries=5):
+        """Execute function with exponential backoff for rate limiting"""
+        for attempt in range(max_retries):
+            try:
+                result = func()
+                time.sleep(random.uniform(2.0, 5.0))
+                return result
+            except HttpError as e:
+                if e.resp.status == 429:  # Rate limit
+                    if attempt == max_retries - 1:
+                        raise e
+                    delay = (2 ** attempt) * 5 + random.uniform(1, 3)
+                    print(f"Rate limit hit, retrying in {delay:.1f} seconds (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                else:
+                    raise e
+        raise Exception("Max retries exceeded")
 
     def _authenticate(self):
         if not self.credentials_path:
@@ -90,8 +110,9 @@ class ClsTimeSheetProcessor:
         
         try:
             body = {'valueInputOption': 'USER_ENTERED', 'data': batch_data}
-            self.service.spreadsheets().values().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
-            time.sleep(1.5)  # Add delay to avoid rate limiting
+            self._retry_with_backoff(
+                lambda: self.service.spreadsheets().values().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
+            )
             return True
         except Exception as e:
             print(f"Failed to update metadata for {employee_name}: {e}")
@@ -126,8 +147,9 @@ class ClsTimeSheetProcessor:
         
         try:
             body = {'valueInputOption': 'USER_ENTERED', 'data': batch_data}
-            self.service.spreadsheets().values().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
-            time.sleep(1.5)  # Add delay to avoid rate limiting
+            self._retry_with_backoff(
+                lambda: self.service.spreadsheets().values().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
+            )
             self._apply_formatting(sheet_id, df, mapping, start_row, employee_name)
             return True
         except Exception as e:
@@ -216,8 +238,9 @@ class ClsTimeSheetProcessor:
                     })
 
             if requests:
-                self.service.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body={"requests": requests}).execute()
-                time.sleep(1.5)  # Add delay to avoid rate limiting
+                self._retry_with_backoff(
+                    lambda: self.service.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body={"requests": requests}).execute()
+                )
                 print(f"Applied formatting to {sheet_name} (defaults, holidays, manual edits).")
 
         except Exception as e:
