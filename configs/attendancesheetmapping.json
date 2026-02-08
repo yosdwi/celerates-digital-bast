@@ -15,6 +15,24 @@
                 "format": "date",
                 "date_format": "%Y-%m-%d"
             },
+            "Shift": {
+                "column": "D",
+                "format": "text"
+            },
+            "Schedule In": {
+                "column": "G",
+                "format": "time",
+                "time_format": "%H:%M"
+            },
+            "Schedule Out": {
+                "column": "H",
+                "format": "time",
+                "time_format": "%H:%M"
+            },
+            "Attendance Code": {
+                "column": "I",
+                "format": "text"
+            },
             "Start Time": {
                 "column": "J",
                 "format": "time",
@@ -24,6 +42,10 @@
                 "column": "K",
                 "format": "time",
                 "time_format": "%H:%M"
+            },
+            "Keterangan": {
+                "column": "L",
+                "format": "text"
             }
         }
     }

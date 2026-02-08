@@ -89,7 +89,7 @@ class ClsNotificationEmail:
         try:
             r = resend.Emails.send(
                 {
-                    "from": "conformnotification@celeratesapps.com",
+                    "from": "yoses.maheswara@gmail.com",
                     "to": target_email,
                     "subject": "Conform Comment Notification",
                     "html": html_template,
