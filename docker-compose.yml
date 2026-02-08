@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   app:
-    build: .
+    image: yosdwi/digital-bast:latest
     container_name: digital-bast-app
     env_file: .env
     environment:
@@ -28,11 +28,11 @@ services:
       ofelia.job-exec.step_04_generate_timesheets.container: "digital-bast-app"
       ofelia.job-exec.step_04_generate_timesheets.command: "python main.py --step step_04_generate_timesheets"
       
-      ofelia.job-exec.step_05_sync_timesheet_to_gsheet.schedule: "5 * * * *" # Runs at minute 5 of every hour
+      ofelia.job-exec.step_05_sync_timesheet_to_gsheet.schedule: "5 */2 * * *" # Runs every 2 hours at minute 5
       ofelia.job-exec.step_05_sync_timesheet_to_gsheet.container: "digital-bast-app"
       ofelia.job-exec.step_05_sync_timesheet_to_gsheet.command: "python main.py --step step_05_sync_timesheet_to_gsheet"
-      
-      ofelia.job-exec.step_06_sync_attendance_to_gsheet.schedule: "10 * * * *" # Runs at minute 10 of every hour
+
+      ofelia.job-exec.step_06_sync_attendance_to_gsheet.schedule: "35 */2 * * *" # Runs every 2 hours at minute 35
       ofelia.job-exec.step_06_sync_attendance_to_gsheet.container: "digital-bast-app"
       ofelia.job-exec.step_06_sync_attendance_to_gsheet.command: "python main.py --step step_06_sync_attendance_to_gsheet"
       

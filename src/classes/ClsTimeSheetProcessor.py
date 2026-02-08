@@ -2,6 +2,7 @@ import pandas as pd
 from datetime import datetime
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
+import time
 
 from src import config
 
@@ -90,6 +91,7 @@ class ClsTimeSheetProcessor:
         try:
             body = {'valueInputOption': 'USER_ENTERED', 'data': batch_data}
             self.service.spreadsheets().values().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
+            time.sleep(1.5)  # Add delay to avoid rate limiting
             return True
         except Exception as e:
             print(f"Failed to update metadata for {employee_name}: {e}")
@@ -125,6 +127,7 @@ class ClsTimeSheetProcessor:
         try:
             body = {'valueInputOption': 'USER_ENTERED', 'data': batch_data}
             self.service.spreadsheets().values().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
+            time.sleep(1.5)  # Add delay to avoid rate limiting
             self._apply_formatting(sheet_id, df, mapping, start_row, employee_name)
             return True
         except Exception as e:
@@ -214,6 +217,7 @@ class ClsTimeSheetProcessor:
 
             if requests:
                 self.service.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body={"requests": requests}).execute()
+                time.sleep(1.5)  # Add delay to avoid rate limiting
                 print(f"Applied formatting to {sheet_name} (defaults, holidays, manual edits).")
 
         except Exception as e:
