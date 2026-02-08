@@ -31,7 +31,7 @@ def run():
             comment_id = comment['comment_id']
             content = comment['comment']
             from_email = comment['created_by_email']
-            to_email = comment['notification_email']
+            to_email = comment.get('Notification_Email') or comment.get('notification_email')
             timesheet_id = comment['row_id']
             
             if not to_email:
