@@ -6,7 +6,7 @@ on:
       - main
 
 env:
-  DOCKER_IMAGE_NAME: yosesdwi/digital-bast # <-- IMPORTANT: Change 'your_username'
+  DOCKER_IMAGE_NAME: yosdwi/digital-bast
 
 jobs:
   build-and-deploy:
@@ -28,7 +28,7 @@ jobs:
     - name: Build and push Docker image
       uses: docker/build-push-action@v4
       with:
-        context: ./digital-bast/v1-prod
+        context: ./digital-bast
         push: true
         tags: ${{ env.DOCKER_IMAGE_NAME }}:latest
         cache-from: type=registry,ref=${{ env.DOCKER_IMAGE_NAME }}:latest
@@ -37,11 +37,11 @@ jobs:
     - name: SSH and Deploy
       uses: appleboy/ssh-action@master
       with:
-        host: ${{ secrets.SERVER_HOST }}         # <-- GitHub Secret (your server's IP or domain)
-        username: ${{ secrets.SERVER_USERNAME }}   # <-- GitHub Secret (e.g., 'ubuntu', 'ec2-user')
-        key: ${{ secrets.SSH_PRIVATE_KEY }}      # <-- GitHub Secret (your server's private SSH key)
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          cd /path/to/your/project/digital-bast/v1-prod # <-- IMPORTANT: Change to your project path on the server
+          cd ~/script/digital-bast
           echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}" >> .env
           
           # Pull the latest image
