@@ -68,7 +68,7 @@ class ClsAttendanceSheetProcessor:
             return True
         except Exception as e:
             logging.error(f"Gagal memperbarui sheet '{sheet_name}': {e}")
-            return False
+            raise
 
     def _apply_formatting(self, sheet_id: str, df: pd.DataFrame, mapping: dict, start_row: int, sheet_name: str):
         try:

@@ -93,7 +93,7 @@ class ClsTimeSheetProcessor:
             return True
         except Exception as e:
             print(f"Failed to update metadata for {employee_name}: {e}")
-            return False
+            raise
 
     def _update_sheet_with_mapping(self, sheet_id: str, df: pd.DataFrame, mapping: dict, employee_name: str):
         start_row = mapping.get('start_row', 1)
@@ -129,7 +129,7 @@ class ClsTimeSheetProcessor:
             return True
         except Exception as e:
             print(f"Failed to update sheet '{employee_name}': {e}")
-            return False
+            raise
 
     def _apply_formatting(self, sheet_id: str, df: pd.DataFrame, mapping: dict, start_row: int, sheet_name: str):
         try:

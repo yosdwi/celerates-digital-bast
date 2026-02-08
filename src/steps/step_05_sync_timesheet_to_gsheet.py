@@ -112,29 +112,30 @@ def run():
     sheet_id = gsheet_processor.get_sheet_id_from_url(config.TIMESHEET_URL)
 
     for name, info in employee_mapping.items():
-        where = f"(Calendar Month,eq,{month_name})~and(Employee Name,like,%{name}%)"
-        
-        response = nocodb_timesheet.get_records(limit=20000, where=where)
-        records = response.get('records', []) if response else []
+        try:
+            where = f"(Calendar Month,eq,{month_name})~and(Employee Name,like,%{name}%)"
+            
+            response = nocodb_timesheet.get_records(limit=20000, where=where)
+            records = response.get('records', []) if response else []
 
-        if not records:
-            continue
-        
-        employee_role = info.get('role')
-        formatted_data = format_nocodb_records_for_gsheet(records, employee_role=employee_role)
-        df = pd.DataFrame(formatted_data)
-        
-        if df.empty:
-            continue
+            if not records:
+                continue
+            
+            employee_role = info.get('role')
+            formatted_data = format_nocodb_records_for_gsheet(records, employee_role=employee_role)
+            df = pd.DataFrame(formatted_data)
+            
+            if df.empty:
+                continue
 
-        success = gsheet_processor.update_timesheet_data(
-            sheet_id=sheet_id, df=df, employee_name=name,
-            target_date=target_date_for_gsheet, mapping_key="timesheet",
-            employee_role=employee_role
-        )
-        if success:
+            gsheet_processor.update_timesheet_data(
+                sheet_id=sheet_id, df=df, employee_name=name,
+                target_date=target_date_for_gsheet, mapping_key="timesheet",
+                employee_role=employee_role
+            )
             print(f"Sinkronisasi berhasil: {len(df)} data untuk {name}.")
-        else:
-            print(f"Sinkronisasi gagal untuk {name}.")
+        except Exception as e:
+            print(f"Sinkronisasi gagal untuk {name}. Error: {e}")
+            raise
 
     print("Langkah 5 Selesai.")

@@ -24,46 +24,46 @@ def run():
     sheet_id = gsheet_processor.get_sheet_id_from_url(config.ATTENDANCE_SHEET_URL)
 
     for name, info in employee_mapping.items():
-        where = f"(Name,like,%{name}%)"
-        
-        response = nocodb_attendance.get_records(limit=2000, where=where, fields="Date,Start Time,End Time,Last Modified")
-        records = response.get('records', []) if response else []
-
-        if not records:
-            continue
-        
-        def get_time(val):
-            if not val: return ''
-            actual_val = val[0] if isinstance(val, list) else val
-            if actual_val is None or str(actual_val).strip() == '':
-                return ''
-            time_str = str(actual_val)
-            return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
-
-        formatted_data = []
-        for r in records:
-            fields = r.get('fields', {})
-            formatted_data.append({
-                'Employee ID': info.get('employee_id'),
-                'Name': name,
-                'Date': fields.get('Date'),
-                'Start Time': get_time(fields.get('Start Time')),
-                'End Time': get_time(fields.get('End Time')),
-                'Last Modified': fields.get('Last Modified', '')
-            })
-        
-        df = pd.DataFrame(formatted_data)
-
-        if df.empty:
-            continue
+        try:
+            where = f"(Name,like,%{name}%)"
             
-        success = gsheet_processor.update_attendance_data(
-            sheet_id=sheet_id, df=df, employee_name=name
-        )
+            response = nocodb_attendance.get_records(limit=2000, where=where, fields="Date,Start Time,End Time,Last Modified")
+            records = response.get('records', []) if response else []
 
-        if success:
+            if not records:
+                continue
+            
+            def get_time(val):
+                if not val: return ''
+                actual_val = val[0] if isinstance(val, list) else val
+                if actual_val is None or str(actual_val).strip() == '':
+                    return ''
+                time_str = str(actual_val)
+                return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
+
+            formatted_data = []
+            for r in records:
+                fields = r.get('fields', {})
+                formatted_data.append({
+                    'Employee ID': info.get('employee_id'),
+                    'Name': name,
+                    'Date': fields.get('Date'),
+                    'Start Time': get_time(fields.get('Start Time')),
+                    'End Time': get_time(fields.get('End Time')),
+                    'Last Modified': fields.get('Last Modified', '')
+                })
+            
+            df = pd.DataFrame(formatted_data)
+
+            if df.empty:
+                continue
+                
+            gsheet_processor.update_attendance_data(
+                sheet_id=sheet_id, df=df, employee_name=name
+            )
             print(f"Sinkronisasi berhasil: {len(df)} data absensi untuk {name}.")
-        else:
-            print(f"Sinkronisasi absensi gagal untuk {name}.")
+        except Exception as e:
+            print(f"Sinkronisasi absensi gagal untuk {name}. Error: {e}")
+            raise
 
     print("Langkah 6 Selesai.")
