@@ -1,0 +1,37 @@
+[
+  {
+    "task_name": "Alert MH02 berulang",
+    "requestor": "Muhammad Fauzan Acyuto",
+    "category": "Monitoring dan Support"
+  },
+  {
+    "task_name": "Monitoring GPS status false",
+    "requestor": "Muhammad Fauzan Acyuto",
+    "category": "Monitoring dan Support"
+  },
+  {
+    "task_name": "Monitoring model cabin MH02 -7",
+    "requestor": "Muhammad Fauzan Acyuto",
+    "category": "Monitoring dan Support"
+  },
+  {
+    "task_name": "Manajemen perubahan data master MariaDB",
+    "requestor": "Muhammad Fauzan Acyuto",
+    "category": "Monitoring dan Support"
+  },
+  {
+    "task_name": "Take issue dan support datalog offline MH02",
+    "requestor": "Muhammad Fauzan Acyuto",
+    "category": "Monitoring dan Support"
+  },
+  {
+    "task_name": "Validasi update segment geofencing",
+    "requestor": "Muhammad Fauzan Acyuto",
+    "category": "Monitoring dan Support"
+  },
+  {
+    "task_name": "Monitoring service server extractor evidence offline",
+    "requestor": "Muhammad Fauzan Acyuto",
+    "category": "Monitoring dan Support"
+  }
+]

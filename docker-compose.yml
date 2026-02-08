@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: digital-bast-app
+    env_file: .env
+    environment:
+      - HEALTHCHECK_URL=https://hc-ping.com/c67ead79-ffdd-4517-b360-fa03763a3df6
+    command: ["sleep", "infinity"]
+    labels:
+      ofelia.enabled: "true"
+      
+      ofelia.job-exec.step_01_sync_holidays.schedule: "@hourly"
+      ofelia.job-exec.step_01_sync_holidays.container: "digital-bast-app"
+      ofelia.job-exec.step_01_sync_holidays.command: "python main.py --step step_01_sync_holidays"
+
+      ofelia.job-exec.step_02_process_attendance.schedule: "@hourly"
+      ofelia.job-exec.step_02_process_attendance.container: "digital-bast-app"
+      ofelia.job-exec.step_02_process_attendance.command: "python main.py --step step_02_process_attendance"
+      
+      ofelia.job-exec.step_03_process_redmine_tasks.schedule: "@hourly"
+      ofelia.job-exec.step_03_process_redmine_tasks.container: "digital-bast-app"
+      ofelia.job-exec.step_03_process_redmine_tasks.command: "python main.py --step step_03_process_redmine_tasks"
+      
+      ofelia.job-exec.step_04_generate_timesheets.schedule: "@hourly"
+      ofelia.job-exec.step_04_generate_timesheets.container: "digital-bast-app"
+      ofelia.job-exec.step_04_generate_timesheets.command: "python main.py --step step_04_generate_timesheets"
+      
+      ofelia.job-exec.step_05_sync_timesheet_to_gsheet.schedule: "@hourly"
+      ofelia.job-exec.step_05_sync_timesheet_to_gsheet.container: "digital-bast-app"
+      ofelia.job-exec.step_05_sync_timesheet_to_gsheet.command: "python main.py --step step_05_sync_timesheet_to_gsheet"
+      
+      ofelia.job-exec.step_06_sync_attendance_to_gsheet.schedule: "@hourly"
+      ofelia.job-exec.step_06_sync_attendance_to_gsheet.container: "digital-bast-app"
+      ofelia.job-exec.step_06_sync_attendance_to_gsheet.command: "python main.py --step step_06_sync_attendance_to_gsheet"
+      
+      ofelia.job-exec.step_07_process_scheduleshifting.schedule: "@hourly"
+      ofelia.job-exec.step_07_process_scheduleshifting.container: "digital-bast-app"
+      ofelia.job-exec.step_07_process_scheduleshifting.command: "python main.py --step step_07_process_scheduleshifting"
+      
+      # This job runs every 5 seconds
+      ofelia.job-exec.step_08_send_comment_notifications.schedule: "*/5 * * * * *"
+      ofelia.job-exec.step_08_send_comment_notifications.container: "digital-bast-app"
+      ofelia.job-exec.step_08_send_comment_notifications.command: "python main.py --step step_08_send_comment_notifications"
+
+  scheduler:
+    image: mcuadros/ofelia:latest
+    container_name: digital-bast-scheduler
+    depends_on:
+      - app
+    command: daemon --docker
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro

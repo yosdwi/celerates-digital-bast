@@ -1,0 +1,57 @@
+name: Deploy ETL Service
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  DOCKER_IMAGE_NAME: yosesdwi/digital-bast # <-- IMPORTANT: Change 'your_username'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }} # <-- GitHub Secret
+        password: ${{ secrets.DOCKERHUB_TOKEN }}   # <-- GitHub Secret
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./digital-bast/v1-prod
+        push: true
+        tags: ${{ env.DOCKER_IMAGE_NAME }}:latest
+        cache-from: type=registry,ref=${{ env.DOCKER_IMAGE_NAME }}:latest
+        cache-to: type=inline
+
+    - name: SSH and Deploy
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.SERVER_HOST }}         # <-- GitHub Secret (your server's IP or domain)
+        username: ${{ secrets.SERVER_USERNAME }}   # <-- GitHub Secret (e.g., 'ubuntu', 'ec2-user')
+        key: ${{ secrets.SSH_PRIVATE_KEY }}      # <-- GitHub Secret (your server's private SSH key)
+        script: |
+          cd /path/to/your/project/digital-bast/v1-prod # <-- IMPORTANT: Change to your project path on the server
+          echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}" >> .env
+          
+          # Pull the latest image
+          docker-compose pull app
+          
+          # Restart the services
+          # The -d flag runs them in detached mode
+          # --no-deps ensures only the 'app' and 'scheduler' are restarted if they changed
+          # --build is not needed here as we pull the pre-built image
+          docker-compose up -d --no-deps app scheduler
+          
+          # Clean up old, unused images
+          docker image prune -f

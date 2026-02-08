@@ -1,0 +1,40 @@
+{
+  "activity_options": [
+    "P00-Project", "P01-Development", "P02-Installation", "P03-Testing",
+    "P04-Training", "P05-Support", "P06-Documentation", "P07-Project Meeting",
+    "P08-Business Travel Project", "P99-Other Project Activities", "M00-Meeting",
+    "M01-Internal Meeting", "M02-Office Meeting", "M03-Business Travel Non-Project",
+    "M04-Outing/Gathering", "M99-Other Meeting", "T00-Training",
+    "T01-Internal Training", "T02-Project Training", "T99-Other Training",
+    "L00-Leave", "L01-Annual Leave", "L02-Sickness Leave", "L03-Unpaid Leave",
+    "L04-Goverment Leave", "L05-Public Holiday", "L06-Maternitity Leave",
+    "L07-Condolence Leave", "L10-Project Leave", "L99-Other Leave",
+    "O00-Others", "O01-Absence"
+  ],
+  "project_options": [
+    "MTG/PR/201805/000000-CELERATE MTG-Internal Boot Camp -1",
+    "MTG/PR/202010/000100-Devoteam-Talent Force 2023-for Telkomsel",
+    "MTG/PR/201909/000100-Smartfren-Talent Force Sep-Jan 2022-for Smartfren",
+    "MTG/PR/202107/000100-Birma Gemilang Prima-Talent Force Jul-Dec 2021-for Komatsu",
+    "MTG/PR/202107/000100-Mode Teknologi Indonesia-Talent Force Jul-Dec 2021-for StyleTheory",
+    "MTG/PR/201903/000100-Rekso Nasional Food-Talent Force Mar-Feb 2022-for MCD",
+    "MTG/PR/202301/000100-Pamapersada Nusantara-Talent Force Jan-Dec 2024-for PAMA",
+    "MTG/PR/201910/000100-SAF-Talent Force Jan-Des 2024-for MST",
+    "MTG/PR/202211/000100-SPT-Talent Force Nov-Dec 2022-for Shollu Philein Technology",
+    "MTG/PR/202209/000000-CELERATE MTG-Internal Boot Camp -2",
+    "MTG/PR/202301/000100-Lion Parcel-Talent Force Jan-Jun 2023-for Lion Parcel",
+    "MTG/PR/202101/000101-Perusahaan Gas Negara-Talent Force Feb-Dec 2021-for PGN",
+    "MTG/PR/202309/000101-Perdana-Talent Force 2023-XL",
+    "MTG/PR/202305/000100-Dipostar-Talent Force 2024-for Dipostar",
+    "MTG/PR/202301/000101-Celerates School - (Jan-Mei 2023) - Celerates",
+    "MTG/PR/202104/000101-Badan Kepegaian Negara-Talent Force AGU-OKT 2023-BKN",
+    "MTG/PR/201909/000101-PUPR-Project Oct-Des 2019-PUPR",
+    "MTG/PR/202304/000101-Tigaraksa - Project - 2023 - Tigaraksa",
+    "MTG/PR/202309/000101-Perdana-Talent Force Sep-Feb 2023-XL",
+    "MTG/PR/202212/000100-Dipostar-Talent Force 2023-for Dipostar"
+  ],
+  "default_activity_weekend": "L05-Public Holiday",
+  "default_activity_weekday": "P01-Development",
+  "default_activity_iot": "P05-Support",
+  "default_project": "MTG/PR/202301/000100-Pamapersada Nusantara-Talent Force Jan-Dec 2024-for PAMA"
+}

@@ -1,0 +1,64 @@
+{
+    "timesheet": {
+        "sheet_name": "Timesheet",
+        "start_row": 8,
+        "metadata_fields": {
+            "employee_name": {
+                "cell": "N1"
+            },
+            "start_date": {
+                "cell": "D5",
+                "format": "%a, %b %d, %Y"
+            },
+            "end_date": {
+                "cell": "D6",
+                "format": "%a, %b %d, %Y"
+            }
+        },
+        "fields": {
+            "No": { "column": "B", "format": "number", "color": "#c5e0b3" },
+            "Date": { "column": "C", "format": "date", "date_format": "%a, %b %d, %Y", "color": "#b4c6e7" },
+            "Activity": { "column": "D", "format": "text", "color": "#ffc000" },
+            "Project Name": { "column": "E", "format": "text", "color": "#ffc000" },
+            "Internal Project ID": { "column": "F", "format": "text", "color": "#ffc000" },
+            "Customer Name/ID": { "column": "G", "format": "text", "color": "#ffc000" },
+            "PO/Contract No": { "column": "H", "format": "text", "color": "#ffc000" },
+            "Work Description": { "column": "I", "format": "text", "color": "#b4c6e7" },
+            "Start Time": { "column": "J", "format": "time", "time_format": "%H:%M", "color": "#b4c6e7" },
+            "End Time": { "column": "K", "format": "time", "time_format": "%H:%M", "color": "#b4c6e7" },
+            "Break Hours": { "column": "L", "format": "number", "color": "#b4c6e7" },
+            "Total Hours": { "column": "M", "format": "number", "color": "#ffd965" },
+            "Over Time Hours": { "column": "N", "format": "number", "color": "#ffd965" },
+            "Regular Hours": { "column": "O", "format": "number", "color": "#ffd965" },
+            "Is Holiday": { "column": "P", "format": "text", "color": "#ffd965" },
+            "Remarks": { "column": "Q", "format": "text", "color": "#ffd965" }
+        }
+    },
+    "timesheet_iot": {
+        "sheet_name": "Timesheet",
+        "start_row": 8,
+        "metadata_fields": {
+            "employee_name": { "cell": "N1" },
+            "start_date": { "cell": "D5", "format": "%a, %b %d, %Y" },
+            "end_date": { "cell": "D6", "format": "%a, %b %d, %Y" }
+        },
+        "fields": {
+            "No": { "column": "B", "format": "number" },
+            "Date": { "column": "C", "format": "date", "date_format": "%a, %b %d, %Y" },
+            "Activity": { "column": "D", "format": "text" },
+            "Project Name": { "column": "E", "format": "text" },
+            "Internal Project ID": { "column": "F", "format": "text" },
+            "Customer Name/ID": { "column": "G", "format": "text" },
+            "PO/Contract No": { "column": "H", "format": "text" },
+            "Work Description": { "column": "J", "format": "text" },
+            "Start Time": { "column": "K", "format": "time", "time_format": "%H:%M" },
+            "End Time": { "column": "L", "format": "time", "time_format": "%H:%M" },
+            "Break Hours": { "column": "M", "format": "number" },
+            "Total Hours": { "column": "N", "format": "number" },
+            "Over Time Hours": { "column": "O", "format": "number" },
+            "Regular Hours": { "column": "P", "format": "number" },
+            "Is Holiday": { "column": "Q", "format": "text" },
+            "Remarks": { "column": "R", "format": "text" }
+        }
+    }
+}
