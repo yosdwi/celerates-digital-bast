@@ -45,13 +45,10 @@ jobs:
           echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}" >> .env
           
           # Pull the latest image
-          docker-compose pull app
+          docker compose pull app
           
           # Restart the services
-          # The -d flag runs them in detached mode
-          # --no-deps ensures only the 'app' and 'scheduler' are restarted if they changed
-          # --build is not needed here as we pull the pre-built image
-          docker-compose up -d --no-deps app scheduler
+          docker compose up -d --no-deps app scheduler
           
           # Clean up old, unused images
           docker image prune -f
