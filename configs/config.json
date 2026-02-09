@@ -7,5 +7,7 @@
     "step_05_sync_timesheet_to_gsheet": true,
     "step_06_sync_attendance_to_gsheet": true,
     "step_07_process_scheduleshifting": true,
+    "step_08_send_comment_notifications": true,
+    "step_09_send_update_notifications": true,
     "month": "Januari"
 }

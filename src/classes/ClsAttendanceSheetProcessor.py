@@ -371,6 +371,9 @@ class ClsAttendanceSheetProcessor:
         if format_type == 'date': return pd.to_datetime(value).strftime(config.get('date_format', '%Y-%m-%d'))
         if format_type == 'time':
             if not value or str(value).strip() == '': return ''
-            return datetime.strptime(str(value), '%H:%M').time().strftime(config.get('time_format', '%H:%M'))
+            actual_val = value[0] if isinstance(value, list) else value
+            if actual_val is None or str(actual_val).strip() == '': return ''
+            time_str = str(actual_val).split(':')[:2]
+            return ':'.join(time_str)
         if format_type == 'number': return float(value) if str(value).strip() else 0.0
         return str(value)
