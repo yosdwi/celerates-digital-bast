@@ -269,13 +269,20 @@ class ClsAttendanceSheetProcessor:
         for field, conf in fields_config.items():
             if field not in df.columns: continue
             col = conf.get('column')
-            if not col: continue
+            if not col or col == 'ignore': continue
 
-            values = [[self._format_value(row.get(field, ''), conf)] for _, row in df.iterrows()]
-            range_str = f"'{sheet_name}'!{col}{start_row}:{col}{start_row + len(df) - 1}"
-            batch_data.append({'range': range_str, 'values': values})
+            try:
+                values = [[self._format_value(row.get(field, ''), conf)] for _, row in df.iterrows()]
+                if values and len(df) > 0:
+                    range_str = f"'{sheet_name}'!{col}{start_row}:{col}{start_row + len(df) - 1}"
+                    batch_data.append({'range': range_str, 'values': values})
+            except Exception as e:
+                logging.warning(f"Error formatting field {field} for sheet {sheet_name}: {e}")
+                continue
 
-        if not batch_data: return False
+        if not batch_data:
+            logging.warning(f"No valid batch data for sheet {sheet_name}")
+            return False
 
         try:
             body = {'valueInputOption': 'USER_ENTERED', 'data': batch_data}
