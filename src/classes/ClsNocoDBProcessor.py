@@ -2,6 +2,8 @@ import requests
 import json
 import hashlib
 import logging
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from src import config
 
 class ClsNocoDBProcessor:
@@ -15,11 +17,25 @@ class ClsNocoDBProcessor:
             'Content-Type': 'application/json'
         }
 
+        self.session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            status_forcelist=[429, 500, 502, 503, 504],
+            backoff_factor=1
+        )
+        adapter = HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=20,
+            max_retries=retry_strategy
+        )
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+
     def create_record(self, data: dict):
         try:
             endpoint = f"{self.base_url}/api/v3/data/{self.base_id}/{self.table_id}/records"
             payload = {"fields": data}
-            response = requests.post(endpoint, headers=self.headers, json=payload, timeout=30)
+            response = self.session.post(endpoint, headers=self.headers, json=payload, timeout=30)
 
             if response.status_code in [200, 201]:
                 return response.json()
@@ -55,7 +71,7 @@ class ClsNocoDBProcessor:
             if fields:
                 params["fields"] = fields
 
-            response = requests.get(endpoint, headers=self.headers, params=params, timeout=30)
+            response = self.session.get(endpoint, headers=self.headers, params=params, timeout=30)
 
             if response.status_code == 200:
                 return response.json()
@@ -73,7 +89,7 @@ class ClsNocoDBProcessor:
             if role_filter:
                 params["where"] = f"(Role,eq,{role_filter})"
             
-            response = requests.get(endpoint, headers=self.headers, params=params, timeout=30)
+            response = self.session.get(endpoint, headers=self.headers, params=params, timeout=30)
 
             if response.status_code == 200:
                 data = response.json()

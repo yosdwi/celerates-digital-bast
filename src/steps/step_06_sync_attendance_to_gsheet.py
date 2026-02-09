@@ -27,52 +27,74 @@ def run():
     start_date, end_date, target_date = get_configured_month_dates()
     month_config = config.GENERAL_CONFIG.get('month', 'Januari')
 
-    for name, info in employee_mapping.items():
-        try:
-            employee_id = info.get('employee_id', '')
+    import concurrent.futures
+    from threading import Lock
 
-            where = f"(Name,like,%{name.strip().title()}%)"
-            response = nocodb_attendance.get_records(limit=2000, where=where, fields="Date,Start Time,End Time,Last Modified")
-            attendance_records = response.get('records', []) if response else []
+    sheet_lock = Lock()
 
-            def get_time(val):
-                if not val: return ''
-                actual_val = val[0] if isinstance(val, list) else val
-                if actual_val is None or str(actual_val).strip() == '':
-                    return ''
-                time_str = str(actual_val)
-                return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
+    def get_time(val):
+        if not val: return ''
+        actual_val = val[0] if isinstance(val, list) else val
+        if actual_val is None or str(actual_val).strip() == '':
+            return ''
+        time_str = str(actual_val)
+        return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
 
-            attendance_data = {}
-            for record in attendance_records:
-                fields = record.get('fields', {})
-                date_key = fields.get('Date')
-                if date_key:
-                    attendance_data[date_key] = {
-                        'Start Time': get_time(fields.get('Start Time')),
-                        'End Time': get_time(fields.get('End Time')),
-                        'Last Modified': fields.get('Last Modified', '')
-                    }
+    def process_attendance(name, info):
+        employee_id = info.get('employee_id', '')
+        where = f"(Name,like,%{name.strip().title()}%)"
+        response = nocodb_attendance.get_records(limit=2000, where=where, fields="Date,Start Time,End Time,Last Modified")
+        attendance_records = response.get('records', []) if response else []
 
-            df = gsheet_processor.generate_full_month_attendance_with_actual_times(
-                employee_name=name,
-                target_date=target_date,
-                employee_id=employee_id,
-                attendance_data=attendance_data,
-                employee_info=info,
-                month_name=month_config
-            )
+        attendance_data = {}
+        for record in attendance_records:
+            fields = record.get('fields', {})
+            date_key = fields.get('Date')
+            if date_key:
+                attendance_data[date_key] = {
+                    'Start Time': get_time(fields.get('Start Time')),
+                    'End Time': get_time(fields.get('End Time')),
+                    'Last Modified': fields.get('Last Modified', '')
+                }
 
-            if df.empty:
-                print(f"Tidak ada data untuk generate untuk {name}")
-                continue
+        df = gsheet_processor.generate_full_month_attendance_with_actual_times(
+            employee_name=name,
+            target_date=target_date,
+            employee_id=employee_id,
+            attendance_data=attendance_data,
+            employee_info=info,
+            month_name=month_config
+        )
 
+        if df.empty:
+            return name, 0, True
+
+        with sheet_lock:
             gsheet_processor.update_attendance_data(
                 sheet_id=sheet_id, df=df, employee_name=name
             )
-            print(f"Sinkronisasi berhasil: {len(df)} data absensi untuk {name} ({target_date.strftime('%B %Y')}).")
-        except Exception as e:
-            print(f"Sinkronisasi absensi gagal untuk {name}. Error: {e}")
-            raise
+
+        return name, len(df), True
+
+    employees = list(employee_mapping.items())
+    batch_size = 3
+    success_count = 0
+
+    for i in range(0, len(employees), batch_size):
+        batch = employees[i:i + batch_size]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {executor.submit(process_attendance, name, info): name for name, info in batch}
+
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    name, count, success = future.result()
+                    if success and count > 0:
+                        success_count += 1
+                        print(f"Sinkronisasi berhasil: {count} data absensi untuk {name} ({target_date.strftime('%B %Y')}).")
+                except Exception as e:
+                    print(f"Sinkronisasi absensi gagal untuk {futures[future]}. Error: {e}")
+
+    print(f"Completed: {success_count} employees synced successfully.")
 
     print("Langkah 6 Selesai.")

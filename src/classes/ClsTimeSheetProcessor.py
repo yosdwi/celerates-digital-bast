@@ -144,17 +144,67 @@ class ClsTimeSheetProcessor:
             batch_data.append({'range': range_str, 'values': values})
 
         if not batch_data: return False
-        
+
         try:
             body = {'valueInputOption': 'USER_ENTERED', 'data': batch_data}
+            format_requests = self._prepare_format_requests(df, mapping, start_row, employee_name)
+
             self._retry_with_backoff(
                 lambda: self.service.spreadsheets().values().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
             )
-            self._apply_formatting(sheet_id, df, mapping, start_row, employee_name)
+
+            if format_requests:
+                format_body = {"requests": format_requests}
+                self._retry_with_backoff(
+                    lambda: self.service.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=format_body).execute()
+                )
             return True
         except Exception as e:
             print(f"Failed to update sheet '{employee_name}': {e}")
             raise
+
+    def _prepare_format_requests(self, df: pd.DataFrame, mapping: dict, start_row: int, sheet_name: str):
+        format_requests = []
+
+        for field, conf in mapping.items():
+            col = conf.get('column')
+            if not col or col == 'ignore': continue
+
+            col_index = self._column_letter_to_index(col) - 1
+            format_type = conf.get('format')
+
+            if format_type in ['date', 'time']:
+                format_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": self._get_sheet_id_by_name(sheet_name),
+                            "startRowIndex": start_row - 1,
+                            "endRowIndex": start_row + len(df) - 1,
+                            "startColumnIndex": col_index,
+                            "endColumnIndex": col_index + 1
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "numberFormat": {
+                                    "type": "DATE_TIME" if format_type == 'date' else "TIME",
+                                    "pattern": conf.get('date_format', 'M/d/yyyy') if format_type == 'date' else conf.get('time_format', 'h:mm AM/PM')
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat.numberFormat"
+                    }
+                })
+
+        return format_requests
+
+    def _get_sheet_id_by_name(self, sheet_name: str):
+        if not hasattr(self, '_sheet_ids_cache'):
+            self._sheet_ids_cache = {}
+
+        if sheet_name in self._sheet_ids_cache:
+            return self._sheet_ids_cache[sheet_name]
+
+        return 0
 
     def _apply_formatting(self, sheet_id: str, df: pd.DataFrame, mapping: dict, start_row: int, sheet_name: str):
         try:

@@ -111,31 +111,54 @@ def run():
         
     sheet_id = gsheet_processor.get_sheet_id_from_url(config.TIMESHEET_URL)
 
-    for name, info in employee_mapping.items():
-        try:
-            where = f"(Calendar Month,eq,{month_name})~and(Employee Name,like,%{name}%)"
-            
-            response = nocodb_timesheet.get_records(limit=20000, where=where)
-            records = response.get('records', []) if response else []
+    import concurrent.futures
+    from threading import Lock
 
-            if not records:
-                continue
-            
-            employee_role = info.get('role')
-            formatted_data = format_nocodb_records_for_gsheet(records, employee_role=employee_role)
-            df = pd.DataFrame(formatted_data)
-            
-            if df.empty:
-                continue
+    sheet_lock = Lock()
 
+    def process_employee(name, info):
+        where = f"(Calendar Month,eq,{month_name})~and(Employee Name,like,%{name}%)"
+        response = nocodb_timesheet.get_records(limit=20000, where=where)
+        records = response.get('records', []) if response else []
+
+        if not records:
+            return name, 0, True
+
+        employee_role = info.get('role')
+        formatted_data = format_nocodb_records_for_gsheet(records, employee_role=employee_role)
+        df = pd.DataFrame(formatted_data)
+
+        if df.empty:
+            return name, 0, True
+
+        with sheet_lock:
             gsheet_processor.update_timesheet_data(
                 sheet_id=sheet_id, df=df, employee_name=name,
                 target_date=target_date_for_gsheet, mapping_key="timesheet",
                 employee_role=employee_role
             )
-            print(f"Sinkronisasi berhasil: {len(df)} data untuk {name}.")
-        except Exception as e:
-            print(f"Sinkronisasi gagal untuk {name}. Error: {e}")
-            raise
+
+        return name, len(df), True
+
+    employees = list(employee_mapping.items())
+    batch_size = 3
+    success_count = 0
+
+    for i in range(0, len(employees), batch_size):
+        batch = employees[i:i + batch_size]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {executor.submit(process_employee, name, info): name for name, info in batch}
+
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    name, count, success = future.result()
+                    if success and count > 0:
+                        success_count += 1
+                        print(f"Sinkronisasi berhasil: {count} data untuk {name}.")
+                except Exception as e:
+                    print(f"Sinkronisasi gagal untuk {futures[future]}. Error: {e}")
+
+    print(f"Completed: {success_count} employees synced successfully.")
 
     print("Langkah 5 Selesai.")
