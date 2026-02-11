@@ -33,8 +33,9 @@ class ClsNocoDBProcessor:
 
     def create_record(self, data: dict):
         try:
-            endpoint = f"{self.base_url}/api/v3/data/{self.base_id}/{self.table_id}/records"
-            payload = {"fields": data}
+            endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
+            payload = data
+            # print(payload)
             response = self.session.post(endpoint, headers=self.headers, json=payload, timeout=30)
 
             if response.status_code in [200, 201]:
@@ -48,8 +49,8 @@ class ClsNocoDBProcessor:
 
     def bulk_create_records(self, data_list: list):
         try:
-            endpoint = f"{self.base_url}/api/v3/data/{self.base_id}/{self.table_id}/records"
-            payload = [{"fields": data} for data in data_list]
+            endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
+            payload = data_list
             response = requests.post(endpoint, headers=self.headers, json=payload, timeout=60)
 
             if response.status_code in [200, 201]:
@@ -64,7 +65,7 @@ class ClsNocoDBProcessor:
 
     def get_records(self, limit: int = 25, offset: int = 0, where: str = None, fields: str = None):
         try:
-            endpoint = f"{self.base_url}/api/v3/data/{self.base_id}/{self.table_id}/records"
+            endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
             params = {"limit": limit, "offset": offset}
             if where:
                 params["where"] = where
@@ -84,7 +85,7 @@ class ClsNocoDBProcessor:
 
     def get_all_employees(self, role_filter: str = None):
         try:
-            endpoint = f"{self.base_url}/api/v3/data/{self.base_id}/{self.table_id}/records"
+            endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
             params = {"limit": 1000}
             if role_filter:
                 params["where"] = f"(Role,eq,{role_filter})"
@@ -93,15 +94,22 @@ class ClsNocoDBProcessor:
 
             if response.status_code == 200:
                 data = response.json()
+                print(f"Employee API Response: {response.status_code}")
+                print(f"Response keys: {list(data.keys()) if data else 'None'}")
+                if data and 'list' in data:
+                    print(f"Found {len(data['list'])} employee records")
                 employee_mapping = {}
 
-                for record in data.get('records', []):
-                    fields = record.get('fields', {})
-                    employee_name = fields.get('Employee Name')
-                    employee_code = fields.get('Employee ID')
-                    employee_nrp = fields.get('NRP')
-                    employee_id = record.get('id')
-                    role = fields.get('Role') 
+                for i, record in enumerate(data.get('list', [])):
+                    if i == 0:  # Print first record for debugging
+                        print(f"Sample record structure: {list(record.keys())}")
+                        print(f"Record content: {record}")
+
+                    employee_name = record.get('Employee Name')
+                    employee_code = record.get('Employee ID')
+                    employee_nrp = record.get('NRP')
+                    employee_id = record.get('Id')  # Capital I in v2
+                    role = record.get('Role') 
 
                     if employee_name and employee_id:
                         employee_mapping[employee_name.strip().title()] = {
@@ -132,17 +140,17 @@ class ClsNocoDBProcessor:
             where_clause = f"(Unique Key,eq,{unique_key})"
             existing_records = self.get_records(limit=1, where=where_clause, fields="id,Last Modified")
 
-            if existing_records and existing_records.get('records'):
-                existing_record = existing_records['records'][0]
+            if existing_records and existing_records.get('list'):
+                existing_record = existing_records['list'][0]
                 
                 last_modified_by = existing_record.get('fields', {}).get('Last Modified')
                 if last_modified_by is not None and '@system.com' not in last_modified_by:
                     logging.info(f"Update dilewati untuk {unique_key}: data diubah manual oleh '{last_modified_by}'.")
                     return "skipped_manual_edit"
 
-                record_id = existing_record['id']
-                endpoint = f"{self.base_url}/api/v3/data/{self.base_id}/{self.table_id}/records"
-                payload = {"id": record_id, "fields": attendance_data}
+                record_id = existing_record['Id']
+                endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
+                payload = {"id": record_id, **attendance_data}
 
                 update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=30)
                 if update_response.status_code in [200, 201]:
@@ -175,11 +183,11 @@ class ClsNocoDBProcessor:
             where_clause = f"(Unique Key,eq,{unique_key})"
             existing_records = self.get_records(limit=1, where=where_clause)
 
-            if existing_records and existing_records.get('records'):
-                existing_record = existing_records['records'][0]
-                record_id = existing_record['id']
-                endpoint = f"{self.base_url}/api/v3/data/{self.base_id}/{self.table_id}/records"
-                payload = {"id": record_id, "fields": timesheet_data}
+            if existing_records and existing_records.get('list'):
+                existing_record = existing_records['list'][0]
+                record_id = existing_record['Id']
+                endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
+                payload = {"id": record_id, **timesheet_data}
 
                 update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=30)
                 if update_response.status_code in [200, 201]:
@@ -200,8 +208,8 @@ class ClsNocoDBProcessor:
 
     def update_record(self, record_id: int, data: dict):
         try:
-            endpoint = f"{self.base_url}/api/v3/data/{self.base_id}/{self.table_id}/records"
-            payload = {"id": record_id, "fields": data}
+            endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
+            payload = {"id": record_id, **data}
             response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=30)
             if response.status_code in [200, 201]:
                 return response.json()
@@ -240,9 +248,9 @@ class ClsNocoDBProcessor:
         existing_records_response = self.get_records(limit=len(unique_keys), where=where_clause)
 
         existing_keys = {}
-        if existing_records_response and existing_records_response.get('records'):
-            for record in existing_records_response['records']:
-                existing_keys[record['fields']['Unique Key']] = record['id']
+        if existing_records_response and existing_records_response.get('list'):
+            for record in existing_records_response['list']:
+                existing_keys[record['Unique Key']] = record['Id']
 
         records_to_create_data = []
         for unique_key, record_data in records_to_update.items():
@@ -289,11 +297,11 @@ class ClsNocoDBProcessor:
             where_clause = f"(Unique Key,eq,{unique_key})"
             existing_records = self.get_records(limit=1, where=where_clause)
 
-            if existing_records and existing_records.get('records'):
-                existing_record = existing_records['records'][0]
-                record_id = existing_record['id']
-                endpoint = f"{self.base_url}/api/v3/data/{self.base_id}/{self.table_id}/records"
-                payload = {"id": record_id, "fields": task_data}
+            if existing_records and existing_records.get('list'):
+                existing_record = existing_records['list'][0]
+                record_id = existing_record['Id']
+                endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
+                payload = {"id": record_id, **task_data}
 
                 update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=30)
                 if update_response.status_code in [200, 201]:
@@ -319,15 +327,15 @@ class ClsNocoDBProcessor:
             where_clause = f"(Unique Key,eq,{unique_key})"
             existing_records = self.get_records(limit=1, where=where_clause)
 
-            if existing_records and existing_records.get('records'):
-                existing_record = existing_records['records'][0]
+            if existing_records and existing_records.get('list'):
+                existing_record = existing_records['list'][0]
                 
                 if existing_record.get('fields', {}).get('Updated By'):
                     return "skipped"
 
-                record_id = existing_record['id']
-                endpoint = f"{self.base_url}/api/v3/data/{self.base_id}/{self.table_id}/records"
-                payload = {"id": record_id, "fields": calendar_data}
+                record_id = existing_record['Id']
+                endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
+                payload = {"id": record_id, **calendar_data}
                 
                 response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=30)
                 if response.status_code in [200, 201]:
@@ -359,11 +367,13 @@ class ClsNocoDBProcessor:
             where_clause = f"(Unique Key,eq,{unique_key})"
             existing_records = self.get_records(limit=1, where=where_clause)
 
-            if existing_records and existing_records.get('records'):
-                existing_record = existing_records['records'][0]
-                record_id = existing_record['id']
-                endpoint = f"{self.base_url}/api/v3/data/{self.base_id}/{self.table_id}/records"
-                payload = {"id": record_id, "fields": schedule_data}
+            if existing_records and existing_records.get('list'):
+                existing_record = existing_records['list'][0]
+                record_id = existing_record['Id']
+                endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
+                payload = {"id": record_id, **schedule_data}
+
+                print(payload)
 
                 update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=30)
                 if update_response.status_code in [200, 201]:

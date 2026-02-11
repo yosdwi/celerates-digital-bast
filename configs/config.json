@@ -1,8 +1,8 @@
 {
     "base_id": "pc38r6u1npuq0ul",
     "step_01_sync_holidays": true,
-    "step_02_process_attendance": false,
-    "step_03_process_redmine_tasks": false,
+    "step_02_process_attendance": true,
+    "step_03_process_redmine_tasks": true,
     "step_04_generate_timesheets": true,
     "step_05_sync_timesheet_to_gsheet": true,
     "step_06_sync_attendance_to_gsheet": true,

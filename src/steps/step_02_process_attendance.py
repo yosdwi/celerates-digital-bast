@@ -25,12 +25,15 @@ def run():
             raise ConnectionError("Failed to connect to the attendance database.")
 
         employee_mapping = nocodb_employee.get_all_employees()
+        print(f"Found {len(employee_mapping)} employees")
         if not employee_mapping:
+            print("No employees found, skipping attendance processing")
             return
 
         start_date, end_date, _ = get_configured_month_dates()
         month_start_str = start_date.strftime('%Y-%m-%d')
         month_end_str = end_date.strftime('%Y-%m-%d')
+        print(f"Processing attendance from {month_start_str} to {month_end_str}")
         
         for name, info in employee_mapping.items():
             nrp, employee_id = info['nrp'], info['id']
@@ -57,6 +60,7 @@ def run():
                 all_records_to_create.append(record)
         
         if not all_records_to_create:
+            print("No attendance records found to process")
             return
             
         success_count = sum(1 for r in all_records_to_create if nocodb_attendance.upsert_attendance(r))
