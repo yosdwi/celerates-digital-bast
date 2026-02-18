@@ -23,19 +23,35 @@ def run():
             print("Tidak ada komentar tertunda untuk dikirim.")
             return
 
-        logging.info(f"Ditemukan {len(pending_comments)} komentar untuk diproses.")
-        print(f"Ditemukan {len(pending_comments)} komentar untuk diproses.")
+        logging.info(f"Ditemukan {len(pending_comments)} total komentar kandidat.")
+        print(f"Ditemukan {len(pending_comments)} total komentar kandidat.")
+
+        pending_comment_ids = [str(c['comment_id']) for c in pending_comments]
+        logged_comment_ids = set()
+
+        if pending_comment_ids:
+            ids_string = ",".join(pending_comment_ids)
+            where_clause = f"(comment_id,in,{ids_string})"
+            existing_records_response = nocodb_processor.get_records(limit=len(pending_comment_ids), where=where_clause)
+            logged_comment_ids = {str(rec['comment_id']) for rec in existing_records_response.get('list', [])}
+            logging.info(f"Ditemukan {len(logged_comment_ids)} notifikasi yang sudah tercatat sebelumnya.")
         
         success_count = 0
+        new_notifications_count = 0
         for comment in pending_comments:
-            comment_id = comment['comment_id']
+            comment_id_str = str(comment['comment_id'])
+
+            if comment_id_str in logged_comment_ids:
+                continue
+            
+            new_notifications_count += 1
             content = comment['comment']
             from_email = comment['created_by_email']
             to_email = comment.get('Notification_Email') or comment.get('notification_email')
             timesheet_id = comment['row_id']
             
             if not to_email:
-                logging.warning(f"Melewatkan comment_id {comment_id} karena email notifikasi tidak ada.")
+                logging.warning(f"Melewatkan comment_id {comment_id_str} karena email notifikasi tidak ada.")
                 continue
 
             email_response = email_notifier.send_comment_via_email(from_email, to_email, content, timesheet_id)
@@ -44,30 +60,24 @@ def run():
                 now = datetime.now().strftime(format="%Y-%m-%d %H:%M")
                 
                 record_data = {
-                    "comment_id": comment_id,
+                    "comment_id": comment['comment_id'],
                     "message": content,
                     "sent_to": to_email,
                     "sent_timestamp": now,
                     "sent_status": True,
                 }
                 
-                where_clause = f"(comment_id,eq,{comment_id})"
-                existing = nocodb_processor.get_records(limit=1, where=where_clause)
-                
-                if existing and not existing.get('list'):
-                    creation_response = nocodb_processor.create_record(record_data)
-                    if creation_response:
-                        logging.info(f"Berhasil mencatat notifikasi untuk comment_id {comment_id}.")
-                        success_count += 1
-                    else:
-                        raise Exception(f"Gagal mencatat notifikasi ke NocoDB untuk comment_id {comment_id}.")
+                creation_response = nocodb_processor.create_record(record_data)
+                if creation_response:
+                    logging.info(f"Berhasil mencatat notifikasi untuk comment_id {comment_id_str}.")
+                    success_count += 1
                 else:
-                    logging.warning(f"Notifikasi untuk comment_id {comment_id} sudah dicatat. Melewatkan.")
+                    logging.error(f"Gagal mencatat notifikasi ke NocoDB untuk comment_id {comment_id_str}.")
             else:
-                raise Exception(f"Gagal mengirim email untuk comment_id {comment_id}.")
+                logging.error(f"Gagal mengirim email untuk comment_id {comment_id_str}.")
 
-        print(f"Berhasil memproses dan mengirim {success_count}/{len(pending_comments)} notifikasi.")
-        logging.info(f"Langkah 8 selesai. Memproses {success_count}/{len(pending_comments)} notifikasi.")
+        print(f"Berhasil memproses dan mengirim {success_count}/{new_notifications_count} notifikasi baru.")
+        logging.info(f"Langkah 8 selesai. Memproses {success_count}/{new_notifications_count} notifikasi baru.")
 
     except Exception as e:
         logging.error(f"Langkah 8 Gagal: {e}")

@@ -8,6 +8,11 @@ services:
     environment:
       - HEALTHCHECK_URL=https://hc-ping.com/c67ead79-ffdd-4517-b360-fa03763a3df6
     command: ["sleep", "infinity"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 512M
     labels:
       ofelia.enabled: "true"
       
