@@ -42,12 +42,15 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
           cd ~/script/digital-bast
-         
-          # Pull the latest image
+
+          # Pull latest code changes
+          git pull origin main
+
+          # Pull the latest images
           docker compose pull app
-          
-          # Restart the services
-          docker compose up -d --no-deps app scheduler
-          
+
+          # Restart all services
+          docker compose up -d
+
           # Clean up old, unused images
           docker image prune -f
