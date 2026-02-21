@@ -34,6 +34,15 @@ jobs:
         cache-from: type=registry,ref=${{ env.DOCKER_IMAGE_NAME }}:latest
         cache-to: type=inline
 
+    - name: Copy config files to server
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        source: "docker-compose.yml,nginx.conf"
+        target: "~/script/digital-bast/"
+
     - name: SSH and Deploy
       uses: appleboy/ssh-action@master
       with:
@@ -42,9 +51,6 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
           cd ~/script/digital-bast
-
-          # Pull latest code changes
-          git pull origin main
 
           # Pull the latest images
           docker compose pull app
