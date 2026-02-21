@@ -49,17 +49,17 @@ def run():
             category = iot_tasks_template[0].get('category')
 
             # 2. Fetch all SHIFT records and filter by date in the script
-            where_clause = f"(Work Type,eq,SHIFT)"
+            where_clause = f"(Shift Name,like,%SHIFT%)"
             shift_response = nocodb_shifting.get_records(where=where_clause, limit=2000) # Increased limit
             
             all_shift_records = []
-            if shift_response and shift_response.get('records'):
-                all_shift_records = shift_response.get('records')
+            if shift_response and shift_response.get('list'):
+                all_shift_records = shift_response.get('list')
 
             # Filter records by date range within the script
             shift_records = []
             for record in all_shift_records:
-                record_date_str = record.get('fields', {}).get('Date')
+                record_date_str = record.get('Date')
                 if not record_date_str:
                     continue
                 try:
@@ -80,11 +80,14 @@ def run():
             for idx, shift in enumerate(shift_records):
                 if idx % 50 == 0:  # Progress every 50 records
                     print(f"Processed {idx}/{len(shift_records)} shifts...")
-                fields = shift.get('fields', {})
-                shift_date_str = fields.get('Date')
-                start_time_str = fields.get('Start Time')
-                end_time_str = fields.get('End Time')
-                employee_data = fields.get('Employee Data Table')
+                shift_date_str = shift.get('Date')
+                start_time_raw = shift.get('Start Time')
+                end_time_raw = shift.get('End Time')
+                employee_data = shift.get('Employee Data')
+
+                # Handle array values
+                start_time_str = start_time_raw[0] if isinstance(start_time_raw, list) and start_time_raw else start_time_raw
+                end_time_str = end_time_raw[0] if isinstance(end_time_raw, list) and end_time_raw else end_time_raw
 
                 if not all([shift_date_str, start_time_str, end_time_str, employee_data]):
                     continue # Skip if essential data is missing

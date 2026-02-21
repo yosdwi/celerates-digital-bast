@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generate Attendance Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            width: 400px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: bold;
+        }
+        select, input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box; /* Important */
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Generate Report</h1>
+        <form action="/report/all" method="POST" target="_blank">
+            <div class="form-group">
+                <label for="year">Year</label>
+                <select id="year" name="year" required>
+                    <!-- Options will be populated by JavaScript -->
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="month">Month</label>
+                <select id="month" name="month" required>
+                    <!-- Options will be populated by JavaScript -->
+                </select>
+            </div>
+            <button type="submit">Generate Report</button>
+        </form>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const yearSelect = document.getElementById('year');
+            const monthSelect = document.getElementById('month');
+            const currentYear = new Date().getFullYear();
+            const currentMonth = new Date().getMonth() + 1;
+
+            // Populate years (e.g., last 5 years to current year)
+            for (let i = currentYear; i >= currentYear - 5; i--) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = i;
+                yearSelect.appendChild(option);
+            }
+
+            // Populate months
+            const months = [
+                { value: 1, name: 'January' }, { value: 2, name: 'February' },
+                { value: 3, name: 'March' }, { value: 4, name: 'April' },
+                { value: 5, name: 'May' }, { value: 6, name: 'June' },
+                { value: 7, name: 'July' }, { value: 8, name: 'August' },
+                { value: 9, name: 'September' }, { value: 10, name: 'October' },
+                { value: 11, name: 'November' }, { value: 12, name: 'December' }
+            ];
+
+            months.forEach(month => {
+                const option = document.createElement('option');
+                option.value = month.value;
+                option.textContent = month.name;
+                monthSelect.appendChild(option);
+            });
+            
+            // Set default to current month and year
+            yearSelect.value = currentYear;
+            monthSelect.value = currentMonth;
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laporan Absensi Karyawan</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        .report-container {
+            width: 800px;
+            margin: auto;
+            margin-bottom: 20px;
+            padding: 20px;
+            background-color: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            page-break-after: always;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid black;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .header .logo-container {
+            border: 2px solid #000;
+            padding: 5px;
+            width: 110px;
+            height: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .header .logo-container img {
+            width: 100px;
+        }
+        .header .company-info {
+            text-align: center;
+            flex-grow: 1;
+        }
+        .header h1 { margin: 0; font-size: 16px; }
+        .header p { margin: 0; }
+        .employee-info { margin-bottom: 20px; }
+        .employee-info table { width: 450px; border-collapse: collapse; }
+        .employee-info td { padding: 2px 5px; }
+        .employee-info td:first-child { width: 80px; }
+        .employee-info td:nth-child(2) { width: 10px; }
+        .report-body { margin-bottom: 20px; }
+        .report-body p { margin-bottom: 10px; }
+        .report-body p strong { font-weight: bold; }
+        .attendance-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
+        }
+        .attendance-table th, .attendance-table td {
+            border: 1px solid black;
+            padding: 5px;
+            text-align: left;
+        }
+        .attendance-table th {
+            background-color: #00B0F0;
+            color: black;
+            font-weight: bold;
+            text-align: center;
+        }
+        .attendance-table td:first-child, .attendance-table td:nth-child(2) { text-align: center; }
+        .footer { margin-top: 30px; }
+        .footer .declaration { margin-bottom: 60px; }
+        .footer .signature { font-weight: bold; text-decoration: underline; }
+        .report-container:last-child { page-break-after: auto; }
+        
+        /* QA FIX: Color styles for IN/OUT status */
+        .time-in { color: green; }
+        .time-out { color: red; }
+    </style>
+</head>
+<body>
+    {% for report in reports %}
+    <div class="report-container">
+        <div class="header">
+            <div class="logo-container">
+                <img src="{{ logo_url }}" alt="PAMA Logo">
+            </div>
+            <div class="company-info">
+                <h1>REPORT ATTENDANCE HISTORY</h1>
+                <p>PT Pamapersada Nusantara</p>
+                <p>Jl. Rawagelam I No. 9, Kawasan Industri Pulogadung, Jakarta 13930 | Telp. (021) 460 215</p>
+            </div>
+        </div>
+
+        <div class="employee-info">
+            <table>
+                <tbody>
+                    <tr> <td>Nrp</td> <td>:</td> <td>{{ report.nrp }}</td> </tr>
+                    <tr> <td>Nama</td> <td>:</td> <td>{{ report.nama }}</td> </tr>
+                    <tr> <td>Periode</td> <td>:</td> <td>{{ periode }}</td> </tr>
+                    <tr> <td>Dicetak</td> <td>:</td> <td>{{ dicetak }}</td> </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="report-body">
+            <p>Berikut adalah data riwayat kehadiran karyawan a.n <strong>{{ report.nama }}</strong> selama periode yang dipilih.</p>
+            <table class="attendance-table">
+                <thead>
+                    <tr>
+                        <th style="width: 5%;">No</th>
+                        <th style="width: 15%;">NRP</th>
+                        <th style="width: 30%;">NAMA</th>
+                        <th style="width: 25%;">TANGGAL KEHADIRAN</th>
+                        <th style="width: 25%;">JAM KEHADIRAN</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in report.attendance_rows %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ row.nrp }}</td>
+                        <td>{{ row.nama }}</td>
+                        <td style="text-align: center;">{{ row.tanggal_kehadiran }}</td>
+                        <td style="text-align: center;">
+                            {% for time, status in row.jam_kehadiran %}
+                                <span class="time-{{ status }}">{{ time }} ({{ status.upper() }})</span>{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="footer">
+            <p class="declaration">
+                Dengan ini saya menyatakan bahwa data kehadiran di atas adalah benar dan sesuai dengan kondisi sebenarnya.<br>
+                Yang bertanda tangan,
+            </p>
+            <p class="signature">{{ report.nama }}</p>
+        </div>
+    </div>
+    {% endfor %}
+</body>
+</html>

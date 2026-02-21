@@ -2,7 +2,7 @@ from datetime import datetime
 from src import config
 from src.classes.ClsTimesheet import ClsTimesheet
 from src.classes.ClsNocoDBProcessor import ClsNocoDBProcessor
-from src.utils.date_helper import get_configured_month_dates
+from src.utils.date_helper import get_configured_month_dates, get_month_name_from_date
 
 def run():
     print("Menjalankan Langkah 4: Membuat Timesheet")
@@ -33,27 +33,33 @@ def run():
             print("Tidak ada data karyawan, proses dihentikan.")
             return
 
-        attendance_response = nocodb_attendance.get_records(limit=2000)
-        tasklist_response = nocodb_tasklist.get_records(limit=2000)
-        iot_tasklist_response = nocodb_iot_tasklist.get_records(limit=2000)
-        schedule_shifting_response = nocodb_schedule_shifting.get_records(limit=2000)
-        calendar_response = nocodb_calendar.get_records(limit=2000)
+        _, _, target_date = get_configured_month_dates()
+        target_month = get_month_name_from_date(target_date)
+        year_month = target_date.strftime('%Y-%m')
 
-        attendance_records = attendance_response.get('records', []) if attendance_response else []
-        tasklist_records = tasklist_response.get('records', []) if tasklist_response else []
-        iot_tasklist_records = iot_tasklist_response.get('records', []) if iot_tasklist_response else []
-        schedule_shifting_records = schedule_shifting_response.get('records', []) if schedule_shifting_response else []
-        calendar_records = calendar_response.get('records', []) if calendar_response else []
-        
+        attendance_month_filter = f"(Month,eq,{target_month})"
+        uk_date_filter = f"(Unique Key,like,{year_month}%)"
+
+        attendance_response = nocodb_attendance.get_records(limit=1000, where=attendance_month_filter)
+        tasklist_response = nocodb_tasklist.get_records(limit=1000, where=uk_date_filter)
+        iot_tasklist_response = nocodb_iot_tasklist.get_records(limit=1000, where=uk_date_filter)
+        schedule_shifting_response = nocodb_schedule_shifting.get_records(limit=1000, where=uk_date_filter)
+        calendar_response = nocodb_calendar.get_records(limit=500, where=f"(Unique Key,like,{year_month}%)")
+
+        attendance_records = attendance_response.get('list', []) if attendance_response else []
+        tasklist_records = tasklist_response.get('list', []) if tasklist_response else []
+        iot_tasklist_records = iot_tasklist_response.get('list', []) if iot_tasklist_response else []
+        schedule_shifting_records = schedule_shifting_response.get('list', []) if schedule_shifting_response else []
+        calendar_records = calendar_response.get('list', []) if calendar_response else []
+
         iot_employees = {name: info for name, info in employee_mapping.items() if info.get('role') == 'IoT Operations'}
         other_employees = {name: info for name, info in employee_mapping.items() if info.get('role') != 'IoT Operations'}
-
-        _, _, target_date = get_configured_month_dates()
         
         all_timesheet_data = []
 
         if other_employees:
             print(f"Membuat timesheet untuk {len(other_employees)} karyawan...")
+            print("Generating timesheet data...")
             timesheet_data = timesheet_generator.generate_monthly_timesheet_data(
                 employee_mapping=other_employees,
                 target_date=target_date,
@@ -63,10 +69,12 @@ def run():
                 holiday_records=calendar_records
             )
             if timesheet_data:
+                print(f"Generated {len(timesheet_data)} timesheet records for regular employees")
                 all_timesheet_data.extend(timesheet_data)
 
         if iot_employees:
             print(f"Membuat timesheet untuk {len(iot_employees)} karyawan IoT...")
+            print("Generating IoT timesheet data...")
             iot_timesheet_data = timesheet_generator.generate_monthly_timesheet_data(
                 employee_mapping=iot_employees,
                 target_date=target_date,
@@ -76,12 +84,14 @@ def run():
                 schedule_records=schedule_shifting_records
             )
             if iot_timesheet_data:
+                print(f"Generated {len(iot_timesheet_data)} timesheet records for IoT employees")
                 all_timesheet_data.extend(iot_timesheet_data)
 
         if not all_timesheet_data:
             print("Tidak ada data timesheet baru yang dibuat.")
             return
             
+        print(f"Starting batch upsert for {len(all_timesheet_data)} timesheet records...")
         success_count = nocodb_timesheet.batch_upsert_timesheets(all_timesheet_data)
 
         print(f"Berhasil menyimpan {success_count} dari {len(all_timesheet_data)} data timesheet.")

@@ -27,5 +27,9 @@ def get_configured_month_dates():
     else:
         next_month_start = (start_date.replace(day=28) + pd.Timedelta(days=4)).replace(day=1)
         end_date = next_month_start - pd.Timedelta(days=1)
-        
+
     return start_date, end_date, target_date_for_gsheet
+
+def get_month_name_from_date(date):
+    month_names = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+    return month_names[date.month - 1]

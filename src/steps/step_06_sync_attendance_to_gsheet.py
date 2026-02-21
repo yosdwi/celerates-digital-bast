@@ -4,9 +4,11 @@ from src import config
 from src.classes.ClsNocoDBProcessor import ClsNocoDBProcessor
 from src.classes.ClsAttendanceSheetProcessor import ClsAttendanceSheetProcessor
 from src.utils.date_helper import get_configured_month_dates
+import logging
 
 def run():
     print("Menjalankan Langkah 6: Sinkronisasi Absensi ke Google Sheets")
+    logging.info("Memulai Langkah 6: Sinkronisasi Absensi ke Google Sheets")
 
     employee_table = config.NOCODB_TABLES.get("employee_data")
     attendance_table = config.NOCODB_TABLES.get("attendance")
@@ -20,6 +22,7 @@ def run():
     employee_mapping = nocodb_employee.get_all_employees()
     if not employee_mapping:
         print("Tidak ada data karyawan ditemukan.")
+        logging.warning("Tidak ada data karyawan yang ditemukan dari NocoDB.")
         return
 
     sheet_id = gsheet_processor.get_sheet_id_from_url(config.ATTENDANCE_SHEET_URL)
@@ -42,37 +45,58 @@ def run():
 
     def process_attendance(name, info):
         employee_id = info.get('employee_id', '')
+        
+        try:
+            gsheet_processor.prepare_future_attendance_rows(
+                sheet_id=sheet_id,
+                sheet_name=name,
+                employee_id=employee_id
+            )
+        except Exception as e:
+            logging.error(f"Gagal mempersiapkan baris masa depan untuk {name}: {e}")
+            # Continue to update current month even if preparation fails
+        
         where = f"(Name,like,%{name.strip().title()}%)"
-        response = nocodb_attendance.get_records(limit=2000, where=where, fields="Date,Start Time,End Time,Last Modified")
-        attendance_records = response.get('records', []) if response else []
+        response = nocodb_attendance.get_records(limit=2000, where=where)
+        attendance_records = response.get('list', []) if response else []
 
         attendance_data = {}
         for record in attendance_records:
-            fields = record.get('fields', {})
-            date_key = fields.get('Date')
+            date_key = record.get('Date')
             if date_key:
                 attendance_data[date_key] = {
-                    'Start Time': get_time(fields.get('Start Time')),
-                    'End Time': get_time(fields.get('End Time')),
-                    'Last Modified': fields.get('Last Modified', '')
+                    'Start Time': get_time(record.get('Start Time')),
+                    'End Time': get_time(record.get('End Time')),
+                    'Last Modified': record.get('Last Modified', '')
                 }
 
-        df = gsheet_processor.generate_full_month_attendance_with_actual_times(
+        df = gsheet_processor.process_noco_records_to_dataframe(
             employee_name=name,
-            target_date=target_date,
             employee_id=employee_id,
             attendance_data=attendance_data,
             employee_info=info,
-            month_name=month_config
+            month_name=month_config,
+            target_date=target_date
         )
 
         if df.empty:
             return name, 0, True
 
         with sheet_lock:
-            gsheet_processor.update_attendance_data(
-                sheet_id=sheet_id, df=df, employee_name=name
-            )
+            try:
+                gsheet_processor.update_attendance_data(
+                    sheet_id=sheet_id, df=df, employee_name=name
+                )
+            except Exception as e:
+                if "SSL" in str(e) or "connection" in str(e).lower():
+                    logging.warning(f"Connection issue for {name}, retrying once: {e}")
+                    import time
+                    time.sleep(5)
+                    gsheet_processor.update_attendance_data(
+                        sheet_id=sheet_id, df=df, employee_name=name
+                    )
+                else:
+                    raise
 
         return name, len(df), True
 
@@ -92,9 +116,10 @@ def run():
                     if success and count > 0:
                         success_count += 1
                         print(f"Sinkronisasi berhasil: {count} data absensi untuk {name} ({target_date.strftime('%B %Y')}).")
+                        logging.info(f"Sinkronisasi berhasil untuk {name}.")
                 except Exception as e:
                     print(f"Sinkronisasi absensi gagal untuk {futures[future]}. Error: {e}")
+                    logging.error(f"Sinkronisasi absensi gagal untuk {futures[future]}: {e}")
 
     print(f"Completed: {success_count} employees synced successfully.")
-
-    print("Langkah 6 Selesai.")
+    logging.info(f"Langkah 6 Selesai. {success_count} karyawan tersinkronisasi.")

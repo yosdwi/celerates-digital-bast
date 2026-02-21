@@ -26,15 +26,18 @@ class ClsAttendanceSheetProcessor:
     def _retry_with_backoff(self, func, max_retries=5):
         for attempt in range(max_retries):
             try:
-                result = func()
-                time.sleep(random.uniform(2.0, 5.0))
-                return result
+                return func()
             except HttpError as e:
-                if e.resp.status == 429:
-                    if attempt == max_retries - 1:
-                        raise e
+                if e.resp.status == 429 and attempt < max_retries - 1:
                     delay = (2 ** attempt) * 5 + random.uniform(1, 3)
-                    print(f"Rate limit hit, retrying in {delay:.1f} seconds (attempt {attempt + 1}/{max_retries})")
+                    logging.warning(f"Rate limit hit, retrying in {delay:.1f}s")
+                    time.sleep(delay)
+                else:
+                    raise e
+            except Exception as e:
+                if "SSL" in str(e) or "connection" in str(e).lower() and attempt < max_retries - 1:
+                    delay = (2 ** attempt) * 3 + random.uniform(2, 4)
+                    logging.warning(f"Connection error, retrying in {delay:.1f}s: {e}")
                     time.sleep(delay)
                 else:
                     raise e
@@ -57,114 +60,51 @@ class ClsAttendanceSheetProcessor:
         except (IndexError, AttributeError):
             return sheet_url
 
-    def generate_full_month_attendance(self, employee_name: str, target_date: datetime, employee_id: str = None):
-        start_of_month = target_date.replace(day=1)
-        next_month = start_of_month.replace(day=28) + timedelta(days=4)
-        end_of_month = next_month - timedelta(days=next_month.day)
+    def process_noco_records_to_dataframe(self, employee_name: str, employee_id: str, attendance_data: dict, employee_info: dict, month_name: str, target_date: datetime):
+        if not attendance_data:
+            return pd.DataFrame()
 
-        dates = []
-        current_date = start_of_month
-        while current_date <= end_of_month:
-            dates.append(current_date)
-            current_date += timedelta(days=1)
-
-        schedule_data = self._get_schedule_data(employee_name)
-        timesheet_data = self._get_timesheet_data(employee_name, start_of_month, end_of_month)
-
-        full_month_data = []
-        for date in dates:
-            date_str = date.strftime('%Y-%m-%d')
-
-            timesheet_record = next((t for t in timesheet_data if t.get('Date') == date_str), {})
-
-            is_iot_operations = employee_info.get('role') == 'IoT Operations' if employee_info else False
-
-            shift_code = self._get_shift_code(schedule_data, date, is_iot_operations, timesheet_record, attendance_record)
-            schedule_in, schedule_out = self._get_schedule_times(schedule_data, date, is_iot_operations)
-            attendance_code = self._get_attendance_code(timesheet_record)
-
-            row_data = {
-                'Employee ID': employee_id or '',
-                'Name': employee_name,
-                'Date': date_str,
-                'Shift': shift_code,
-                'Schedule In': schedule_in,
-                'Schedule Out': schedule_out,
-                'Attendance Code': attendance_code,
-                'Start Time': timesheet_record.get('Start Time', ''),
-                'End Time': timesheet_record.get('End Time', ''),
-                'Keterangan': timesheet_record.get('Remarks', '')
-            }
-
-            full_month_data.append(row_data)
-
-        return pd.DataFrame(full_month_data)
-
-    def generate_full_month_attendance_with_actual_times(self, employee_name: str, target_date: datetime, employee_id: str = None, attendance_data: dict = None, employee_info: dict = None, month_name: str = "Januari"):
         schedule_data = self._get_schedule_data(employee_name, employee_info)
         timesheet_data = self._get_timesheet_data(employee_name, target_date.replace(day=1), target_date.replace(day=28) + timedelta(days=4), month_name)
 
-        if attendance_data is None:
-            attendance_data = {}
-
-        full_month_data = []
-        for day in range(1, 32):
+        processed_records = []
+        for date_str, attendance_record in attendance_data.items():
             try:
-                current_date = target_date.replace(day=day)
-                date_str = current_date.strftime('%Y-%m-%d')
-
+                current_date = datetime.strptime(date_str, '%Y-%m-%d')
                 timesheet_record = next((t for t in timesheet_data if t.get('Date') == date_str), {})
-                attendance_record = attendance_data.get(date_str, {})
-
-                is_iot_operations = employee_info.get('role') == 'IoT Operations' if employee_info else False
+                
+                is_iot_operations = employee_info.get('role') == 'IoT Operations'
 
                 shift_code = self._get_shift_code(schedule_data, current_date, is_iot_operations, timesheet_record, attendance_record)
                 schedule_in, schedule_out = self._get_schedule_times(schedule_data, current_date, is_iot_operations)
                 attendance_code = self._get_attendance_code(timesheet_record)
 
-                actual_start_time = attendance_record.get('Start Time', timesheet_record.get('Start Time', ''))
-                actual_end_time = attendance_record.get('End Time', timesheet_record.get('End Time', ''))
-
-                row_data = {
-                    'Employee ID': employee_id or '',
+                processed_records.append({
+                    'Employee ID': employee_id,
                     'Name': employee_name,
                     'Date': date_str,
                     'Shift': shift_code,
                     'Schedule In': schedule_in,
                     'Schedule Out': schedule_out,
                     'Attendance Code': attendance_code,
-                    'Start Time': actual_start_time,
-                    'End Time': actual_end_time,
+                    'Start Time': attendance_record.get('Start Time', ''),
+                    'End Time': attendance_record.get('End Time', ''),
                     'Keterangan': timesheet_record.get('Remarks', ''),
                     'Last Modified': attendance_record.get('Last Modified', '')
-                }
-            except ValueError:
-                row_data = {
-                    'Employee ID': '',
-                    'Name': '',
-                    'Date': '',
-                    'Shift': '',
-                    'Schedule In': '',
-                    'Schedule Out': '',
-                    'Attendance Code': '',
-                    'Start Time': '',
-                    'End Time': '',
-                    'Keterangan': '',
-                    'Last Modified': ''
-                }
-
-            full_month_data.append(row_data)
-
-        return pd.DataFrame(full_month_data)
+                })
+            except Exception as e:
+                logging.warning(f"Could not process record for {employee_name} on {date_str}: {e}")
+                continue
+        
+        return pd.DataFrame(processed_records)
 
     def _get_schedule_data(self, employee_name, employee_info=None):
         if not self.nocodb_schedule:
             return []
-
         try:
-            where = f"(Employee Name,like,%{employee_name.strip().title()}%)"
+            where = f"(Employee Name,eq,{employee_name.strip().title()})"
             response = self.nocodb_schedule.get_records(limit=1000, where=where)
-            return response.get('records', []) if response else []
+            return response.get('list', []) if response else []
         except Exception as e:
             logging.warning(f"Failed to get schedule data for {employee_name}: {e}")
             return []
@@ -172,23 +112,10 @@ class ClsAttendanceSheetProcessor:
     def _get_timesheet_data(self, employee_name, start_date, end_date, month_name="Januari"):
         if not self.nocodb_timesheet:
             return []
-
         try:
-            where = f"(Calendar Month,eq,{month_name})~and(Employee Name,like,%{employee_name.strip().title()}%)"
-            response = self.nocodb_timesheet.get_records(limit=1000, where=where, fields="Date,Start Time,End Time,Holiday,Remarks")
-
-            processed_data = []
-            for record in response.get('records', []) if response else []:
-                fields = record.get('fields', {})
-                processed_data.append({
-                    'Date': fields.get('Date'),
-                    'Start Time': fields.get('Start Time'),
-                    'End Time': fields.get('End Time'),
-                    'Holiday': fields.get('Holiday'),
-                    'Remarks': fields.get('Remarks', '')
-                })
-
-            return processed_data
+            where = f"(Calendar Month,eq,{month_name})~and(Employee Name,eq,{employee_name.strip().title()})"
+            response = self.nocodb_timesheet.get_records(limit=1000, where=where)
+            return response.get('list', []) if response else []
         except Exception as e:
             logging.warning(f"Failed to get timesheet data for {employee_name}: {e}")
             return []
@@ -196,92 +123,85 @@ class ClsAttendanceSheetProcessor:
     def _get_shift_code(self, schedule_data, date, is_iot_operations, timesheet_record=None, attendance_record=None):
         if is_iot_operations and schedule_data:
             for schedule in schedule_data:
-                schedule_fields = schedule.get('fields', {})
-                schedule_date = schedule_fields.get('Date')
-                if schedule_date == date.strftime('%Y-%m-%d'):
-                    work_type = schedule_fields.get('Work Type', [])
-                    if isinstance(work_type, list) and 'OFF' in work_type:
+                if schedule.get('Date') == date.strftime('%Y-%m-%d'):
+                    work_type_raw = schedule.get('Work Type', [])
+                    work_type = work_type_raw if isinstance(work_type_raw, str) else (work_type_raw[0] if isinstance(work_type_raw, list) and work_type_raw else '')
+                    if 'OFF' in str(work_type).upper():
                         return 'Day Off'
-
-                    shift_code = schedule_fields.get('Shift Code', 'Day Off')
-                    if isinstance(shift_code, list) and shift_code:
-                        return shift_code[0]
-                    return shift_code if shift_code else 'Day Off'
+                    shift = schedule.get('Shift Code', 'Day Off')
+                    return shift[0] if isinstance(shift, list) and shift else shift
             return 'Day Off'
-        else:
-            has_attendance = (attendance_record and (attendance_record.get('Start Time') or attendance_record.get('End Time')))
-            has_timesheet_time = (timesheet_record and (timesheet_record.get('Start Time') or timesheet_record.get('End Time')))
-            is_holiday = (timesheet_record and str(timesheet_record.get('Holiday', '')).upper() == 'H')
 
-            if is_holiday or not (has_attendance or has_timesheet_time):
-                return 'Day Off'
-            else:
-                return 'N'  
+        has_time = attendance_record and (attendance_record.get('Start Time') or attendance_record.get('End Time'))
+        is_holiday = timesheet_record and str(timesheet_record.get('Holiday', '')).upper() == 'H'
+        return 'Day Off' if is_holiday or not has_time else 'N'
 
     def _get_schedule_times(self, schedule_data, date, is_iot_operations):
         if is_iot_operations and schedule_data:
             for schedule in schedule_data:
-                schedule_fields = schedule.get('fields', {})
-                schedule_date = schedule_fields.get('Date')
-                if schedule_date == date.strftime('%Y-%m-%d'):
-                    start_time = schedule_fields.get('Start Time') or '07:30'
-                    end_time = schedule_fields.get('End Time') or '16:30'
-                    if isinstance(start_time, str) and ':' in start_time:
-                        start_time = start_time.split(':')[:2]  # Take HH:MM only
-                        start_time = ':'.join(start_time)
-                    if isinstance(end_time, str) and ':' in end_time:
-                        end_time = end_time.split(':')[:2]  # Take HH:MM only
-                        end_time = ':'.join(end_time)
-                    return start_time, end_time
+                if schedule.get('Date') == date.strftime('%Y-%m-%d'):
+                    start_time_raw = schedule.get('Start Time', '07:30')
+                    end_time_raw = schedule.get('End Time', '16:30')
+
+                    start_time = str(start_time_raw[0] if isinstance(start_time_raw, list) and start_time_raw else start_time_raw)
+                    end_time = str(end_time_raw[0] if isinstance(end_time_raw, list) and end_time_raw else end_time_raw)
+
+                    start_formatted = ':'.join(start_time.split(' ')[-1].split(':')[:2]) if ':' in start_time else start_time
+                    end_formatted = ':'.join(end_time.split(' ')[-1].split(':')[:2]) if ':' in end_time else end_time
+
+                    return (start_formatted, end_formatted)
         return '07:30', '16:30'
 
     def _get_attendance_code(self, timesheet_record):
-        holiday_value = timesheet_record.get('Holiday', '')
-
-        if holiday_value and str(holiday_value).upper() == 'H':
-            return ''  # Kosong jika libur (H di timesheet = libur)
-        elif timesheet_record.get('Start Time') or timesheet_record.get('End Time'):
-            return 'H'  # H jika hadir (ada start/end time)
-        else:
-            return ''  # Kosong jika tidak ada data
+        if timesheet_record.get('Holiday') and str(timesheet_record.get('Holiday')).upper() == 'H': return ''
+        return 'H' if timesheet_record.get('Start Time') or timesheet_record.get('End Time') else ''
 
     def update_attendance_data(self, sheet_id: str, df: pd.DataFrame, employee_name: str, mapping_key: str = "employee_attendance"):
-        if not self.service:
-            logging.error("Autentikasi gagal, tidak dapat memperbarui sheet.")
-            return False
+        if df.empty:
+            logging.info(f"DataFrame kosong untuk {employee_name}, tidak ada yang diperbarui.")
+            return True
 
         mapping = self.mapping_config.get(mapping_key)
         if not mapping:
             logging.warning(f"Konfigurasi mapping tidak ditemukan untuk kunci: {mapping_key}")
             return False
 
-        if df.empty:
-            logging.info(f"DataFrame kosong untuk {employee_name}, tidak ada yang diperbarui.")
-            return True
+        date_column = mapping.get('fields', {}).get('Date', {}).get('column')
+        if not date_column:
+            raise ValueError("Kolom 'Date' tidak ditemukan di mapping.")
 
-        return self._update_sheet_with_mapping(sheet_id, df, mapping, employee_name)
+        date_range_to_read = f"'{employee_name}'!{date_column}1:{date_column}"
+        date_col_values = self._retry_with_backoff(
+            lambda: self.service.spreadsheets().values().get(spreadsheetId=sheet_id, range=date_range_to_read).execute()
+        ).get('values', [])
+        
+        date_to_row_map = {date[0]: i + 1 for i, date in enumerate(date_col_values) if date}
 
-    def _update_sheet_with_mapping(self, sheet_id: str, df: pd.DataFrame, mapping: dict, sheet_name: str):
-        start_row = mapping.get('start_row', 1)
-        fields_config = mapping.get('fields', {})
+        return self._update_sheet_with_mapping(sheet_id, df, mapping, employee_name, date_to_row_map)
+
+    def _update_sheet_with_mapping(self, sheet_id: str, df: pd.DataFrame, mapping: dict, sheet_name: str, date_to_row_map: dict):
         batch_data = []
-
-        for field, conf in fields_config.items():
-            if field not in df.columns: continue
-            col = conf.get('column')
-            if not col or col == 'ignore': continue
-
-            try:
-                values = [[self._format_value(row.get(field, ''), conf)] for _, row in df.iterrows()]
-                if values and len(df) > 0:
-                    range_str = f"'{sheet_name}'!{col}{start_row}:{col}{start_row + len(df) - 1}"
-                    batch_data.append({'range': range_str, 'values': values})
-            except Exception as e:
-                logging.warning(f"Error formatting field {field} for sheet {sheet_name}: {e}")
+        fields_config = mapping.get('fields', {})
+        
+        for _, row in df.iterrows():
+            date_str = row.get('Date')
+            if not date_str or date_str not in date_to_row_map:
                 continue
-
+            
+            row_num = date_to_row_map[date_str]
+            
+            for field, conf in fields_config.items():
+                if field not in row or conf.get('column') == 'ignore': continue
+                
+                col = conf.get('column')
+                if not col: continue
+                
+                value = self._format_value(row.get(field), conf)
+                range_str = f"'{sheet_name}'!{col}{row_num}"
+                batch_data.append({'range': range_str, 'values': [[value]]})
+        
         if not batch_data:
-            logging.warning(f"No valid batch data for sheet {sheet_name}")
+            logging.warning(f"Tidak ada data valid untuk di-batch update pada sheet {sheet_name}")
             return False
 
         try:
@@ -289,98 +209,75 @@ class ClsAttendanceSheetProcessor:
             self._retry_with_backoff(
                 lambda: self.service.spreadsheets().values().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
             )
-            self._apply_formatting(sheet_id, df, mapping, start_row, sheet_name)
             return True
         except Exception as e:
             logging.error(f"Gagal memperbarui sheet '{sheet_name}': {e}")
             raise
 
-    def _apply_formatting(self, sheet_id: str, df: pd.DataFrame, mapping: dict, start_row: int, sheet_name: str):
-        try:
-            sheets_meta = self.service.spreadsheets().get(spreadsheetId=sheet_id).execute().get('sheets', [])
-            sheet_id_num = next((s['properties']['sheetId'] for s in sheets_meta if s['properties']['title'] == sheet_name), None)
-            if sheet_id_num is None:
-                logging.warning(f"Sheet '{sheet_name}' tidak ditemukan untuk pemformatan.")
-                return
-
-            requests = []
-
-            def hex_to_rgb(hex_color):
-                hex_color = hex_color.lstrip('#')
-                return {"red": int(hex_color[0:2], 16) / 255.0, "green": int(hex_color[2:4], 16) / 255.0, "blue": int(hex_color[4:6], 16) / 255.0}
-
-            def col_to_index(col_letter):
-                return ord(col_letter.upper()) - ord('A')
-
-            white_color = {"red": 1.0, "green": 1.0, "blue": 1.0}
-            manual_edit_color_hex = "#ffd965"
-            manual_edit_color_rgb = hex_to_rgb(manual_edit_color_hex)
-
-            fields_config = mapping.get('fields', {})
-            start_time_col_conf = fields_config.get('Start Time', {})
-            end_time_col_conf = fields_config.get('End Time', {})
-
-            if start_time_col_conf.get('column') and end_time_col_conf.get('column'):
-                start_time_col_idx = col_to_index(start_time_col_conf['column'])
-                end_time_col_idx = col_to_index(end_time_col_conf['column'])
-                end_row = start_row + len(df) - 1
-
-                requests.append({
-                    "repeatCell": {
-                        "range": {
-                            "sheetId": sheet_id_num,
-                            "startRowIndex": start_row - 1,
-                            "endRowIndex": end_row,
-                            "startColumnIndex": start_time_col_idx,
-                            "endColumnIndex": start_time_col_idx + 1
-                        },
-                        "cell": {"userEnteredFormat": {"backgroundColor": white_color}},
-                        "fields": "userEnteredFormat.backgroundColor"
-                    }
-                })
-
-                requests.append({
-                    "repeatCell": {
-                        "range": {
-                            "sheetId": sheet_id_num,
-                            "startRowIndex": start_row - 1,
-                            "endRowIndex": end_row,
-                            "startColumnIndex": end_time_col_idx,
-                            "endColumnIndex": end_time_col_idx + 1
-                        },
-                        "cell": {"userEnteredFormat": {"backgroundColor": white_color}},
-                        "fields": "userEnteredFormat.backgroundColor"
-                    }
-                })
-
-                if 'Last Modified' in df.columns:
-                    for i, row in df.iterrows():
-                        last_modified_by = str(row.get('Last Modified', ''))
-                        if last_modified_by and '@system.com' not in last_modified_by:
-                            r_idx = start_row + i
-                            requests.append({"repeatCell": {"range": {"sheetId": sheet_id_num, "startRowIndex": r_idx - 1, "endRowIndex": r_idx, "startColumnIndex": start_time_col_idx, "endColumnIndex": start_time_col_idx + 1}, "cell": {"userEnteredFormat": {"backgroundColor": manual_edit_color_rgb}}, "fields": "userEnteredFormat.backgroundColor"}})
-                            requests.append({"repeatCell": {"range": {"sheetId": sheet_id_num, "startRowIndex": r_idx - 1, "endRowIndex": r_idx, "startColumnIndex": end_time_col_idx, "endColumnIndex": end_time_col_idx + 1}, "cell": {"userEnteredFormat": {"backgroundColor": manual_edit_color_rgb}}, "fields": "userEnteredFormat.backgroundColor"}})
-
-            if requests:
-                self._retry_with_backoff(
-                    lambda: self.service.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body={"requests": requests}).execute()
-                )
-                logging.info(f"Pemformatan diterapkan untuk {sheet_name}: reset ke putih dan highlight manual edit.")
-
-        except Exception as e:
-            logging.error(f"Gagal menerapkan pemformatan: {e}")
-
-
     def _format_value(self, value, config):
         if pd.isna(value) or str(value).strip() == '': return ''
-        
         format_type = config.get('format')
         if format_type == 'date': return pd.to_datetime(value).strftime(config.get('date_format', '%Y-%m-%d'))
         if format_type == 'time':
             if not value or str(value).strip() == '': return ''
-            actual_val = value[0] if isinstance(value, list) else value
-            if actual_val is None or str(actual_val).strip() == '': return ''
-            time_str = str(actual_val).split(':')[:2]
-            return ':'.join(time_str)
-        if format_type == 'number': return float(value) if str(value).strip() else 0.0
+            val_str = str(value[0] if isinstance(value, list) else value)
+            return ':'.join(val_str.split(':')[:2])
         return str(value)
+
+    def prepare_future_attendance_rows(self, sheet_id: str, sheet_name: str, employee_id: str, mapping_key: str = "employee_attendance"):
+        try:
+            mapping = self.mapping_config.get(mapping_key, {})
+            fields_config = mapping.get('fields', {})
+            date_column = fields_config.get('Date', {}).get('column')
+            
+            if not date_column:
+                raise ValueError("Date column not found in attendance sheet mapping.")
+
+            range_to_read = f"'{sheet_name}'!{date_column}2:{date_column}"
+            response = self._retry_with_backoff(
+                lambda: self.service.spreadsheets().values().get(spreadsheetId=sheet_id, range=range_to_read).execute()
+            )
+            
+            values = response.get('values', [])
+            last_date_str = next((row[0] for row in reversed(values) if row and row[0]), None)
+            last_date = datetime.strptime(last_date_str, '%Y-%m-%d').date() if last_date_str else None
+            
+            today = datetime.now().date()
+            start_date = (last_date + timedelta(days=1)) if last_date else today.replace(day=1)
+
+            future_month_date = (today.replace(day=1) + timedelta(days=62)).replace(day=1)
+            _, last_day = monthrange(future_month_date.year, future_month_date.month)
+            target_end_date = future_month_date.replace(day=last_day)
+
+            if start_date > target_end_date:
+                return
+
+            def col_to_index(col):
+                return sum([(ord(c.upper()) - ord('A') + 1) * (26 ** i) for i, c in enumerate(reversed(col))]) - 1
+
+            col_letters = [conf['column'] for conf in fields_config.values() if conf.get('column')]
+            num_cols = max(col_to_index(c) for c in col_letters) + 1 if col_letters else 0
+            field_to_col_index = {f: col_to_index(c['column']) for f, c in fields_config.items() if c.get('column')}
+
+            new_rows = []
+            current_date = start_date
+            while current_date <= target_end_date:
+                ordered_row = [''] * num_cols
+                new_row_data = {'Employee ID': employee_id, 'Name': sheet_name, 'Date': current_date.strftime('%Y-%m-%d')}
+                for field, value in new_row_data.items():
+                    if field in field_to_col_index:
+                        ordered_row[field_to_col_index[field]] = value
+                new_rows.append(ordered_row)
+                current_date += timedelta(days=1)
+            
+            if new_rows:
+                body = {'values': new_rows}
+                self._retry_with_backoff(
+                    lambda: self.service.spreadsheets().values().append(
+                        spreadsheetId=sheet_id, range=f"'{sheet_name}'!A1",
+                        valueInputOption='USER_ENTERED', insertDataOption='INSERT_ROWS', body=body
+                    ).execute()
+                )
+        except Exception as e:
+            logging.error(f"Failed to prepare future attendance rows for '{sheet_name}': {e}")
+            raise

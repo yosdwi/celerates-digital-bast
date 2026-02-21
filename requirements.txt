@@ -10,3 +10,5 @@ schedule
 sqlalchemy
 resend
 psycopg2-binary
+Jinja2
+Flask

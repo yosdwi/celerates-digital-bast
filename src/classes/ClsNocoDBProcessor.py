@@ -63,7 +63,7 @@ class ClsNocoDBProcessor:
             return None
 
 
-    def get_records(self, limit: int = 25, offset: int = 0, where: str = None, fields: str = None):
+    def get_records(self, limit: int = 25, offset: int = 0, where: str = None, fields: str = None, sort: str = None):
         try:
             endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
             params = {"limit": limit, "offset": offset}
@@ -71,6 +71,8 @@ class ClsNocoDBProcessor:
                 params["where"] = where
             if fields:
                 params["fields"] = fields
+            if sort:
+                params["sort"] = sort
 
             response = self.session.get(endpoint, headers=self.headers, params=params, timeout=30)
 
@@ -94,16 +96,11 @@ class ClsNocoDBProcessor:
 
             if response.status_code == 200:
                 data = response.json()
-                print(f"Employee API Response: {response.status_code}")
-                print(f"Response keys: {list(data.keys()) if data else 'None'}")
                 if data and 'list' in data:
                     print(f"Found {len(data['list'])} employee records")
                 employee_mapping = {}
 
-                for i, record in enumerate(data.get('list', [])):
-                    if i == 0:  # Print first record for debugging
-                        print(f"Sample record structure: {list(record.keys())}")
-                        print(f"Record content: {record}")
+                for record in data.get('list', []):
 
                     employee_name = record.get('Employee Name')
                     employee_code = record.get('Employee ID')
@@ -127,8 +124,7 @@ class ClsNocoDBProcessor:
             return {}
 
     def generate_unique_key(self, date: str, employee_id: str) -> str:
-        key_string = f"{date}_{employee_id}"
-        return hashlib.md5(key_string.encode()).hexdigest()[:16]
+        return f"{date}_{employee_id}"
 
     def upsert_attendance(self, attendance_data: dict):
         try:
@@ -138,13 +134,13 @@ class ClsNocoDBProcessor:
             attendance_data["Unique Key"] = unique_key
 
             where_clause = f"(Unique Key,eq,{unique_key})"
-            existing_records = self.get_records(limit=1, where=where_clause, fields="id,Last Modified")
+            existing_records = self.get_records(limit=1, where=where_clause, fields="Id,Last Modified")
 
             if existing_records and existing_records.get('list'):
                 existing_record = existing_records['list'][0]
-                
-                last_modified_by = existing_record.get('fields', {}).get('Last Modified')
-                if last_modified_by is not None and '@system.com' not in last_modified_by:
+
+                last_modified_by = existing_record.get('Last Modified')
+                if last_modified_by is not None and '@system.com' not in str(last_modified_by):
                     logging.info(f"Update dilewati untuk {unique_key}: data diubah manual oleh '{last_modified_by}'.")
                     return "skipped_manual_edit"
 
@@ -253,13 +249,38 @@ class ClsNocoDBProcessor:
                 existing_keys[record['Unique Key']] = record['Id']
 
         records_to_create_data = []
+        updates_to_process = []
+
+        # Separate records for update vs create
         for unique_key, record_data in records_to_update.items():
             if unique_key in existing_keys:
                 record_id = existing_keys[unique_key]
-                if self.update_record(record_id, record_data):
-                    success_count += 1
+                updates_to_process.append((record_id, record_data))
             else:
                 records_to_create_data.append(record_data)
+
+        # Process updates in batches with progress indicator
+        if updates_to_process:
+            import time
+            batch_size = 50  # Process 50 updates at a time
+            total_updates = len(updates_to_process)
+            print(f"Updating {total_updates} existing timesheet records in batches of {batch_size}...")
+
+            for i in range(0, total_updates, batch_size):
+                batch = updates_to_process[i:i + batch_size]
+                batch_success = 0
+
+                for record_id, record_data in batch:
+                    if self.update_record(record_id, record_data):
+                        batch_success += 1
+
+                success_count += batch_success
+                progress = i + len(batch)
+                print(f"Progress: {progress}/{total_updates} updates completed ({batch_success}/{len(batch)} successful in this batch)")
+
+                # Small delay between batches to avoid overwhelming the API
+                if i + batch_size < total_updates:
+                    time.sleep(1)
 
         if records_to_create_data:
             created_records = self.bulk_create_records(records_to_create_data)
@@ -271,12 +292,10 @@ class ClsNocoDBProcessor:
 
     def generate_task_unique_key(self, date: str, employee_id: str, task_list: str) -> str:
         clean_task = ''.join(c for c in task_list if c.isalnum() or c in ' _-').strip()
-        key_string = f"{date}_{employee_id}_{clean_task}"
-        return hashlib.md5(key_string.encode()).hexdigest()[:16]
+        return f"{date}_{employee_id}_{clean_task}"
 
     def generate_task_id_key(self, start_date: str, employee_id: str) -> str:
-        key_string = f"{start_date}_{employee_id}"
-        return hashlib.md5(key_string.encode()).hexdigest()[:16]
+        return f"{start_date}_{employee_id}"
 
     def upsert_redmine_task(self, task_data: dict):
         try:
@@ -321,10 +340,9 @@ class ClsNocoDBProcessor:
             if not date_str:
                 return None
 
-            unique_key = hashlib.md5(date_str.encode()).hexdigest()
-            calendar_data["Unique Key"] = unique_key
-            
-            where_clause = f"(Unique Key,eq,{unique_key})"
+            calendar_data["Unique Key"] = date_str
+
+            where_clause = f"(Unique Key,eq,{date_str})"
             existing_records = self.get_records(limit=1, where=where_clause)
 
             if existing_records and existing_records.get('list'):

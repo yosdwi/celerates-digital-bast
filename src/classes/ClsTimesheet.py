@@ -139,9 +139,7 @@ class ClsTimesheet:
         return dict(lookup) if is_list else lookup
 
     def _generate_unique_key(self, date: str, employee_id: str) -> str:
-        key_string = f"{date}_{employee_id}"
-        return hashlib.md5(key_string.encode()).hexdigest()[:16]
+        return f"{date}_{employee_id}"
 
     def _generate_task_id_key(self, start_date: str, employee_id: str) -> str:
-        key_string = f"{start_date}_{employee_id}"
-        return hashlib.md5(key_string.encode()).hexdigest()[:16]
+        return f"{start_date}_{employee_id}"

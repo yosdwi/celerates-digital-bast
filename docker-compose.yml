@@ -1,6 +1,29 @@
 version: '3.8'
 
 services:
+  nginx:
+    image: nginx:alpine
+    container_name: digital-bast-nginx
+    ports:
+      - "8081:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - web-server
+    restart: always
+    networks:
+      - digital-bast-network
+
+  web-server:
+    image: yosdwi/digital-bast:latest
+    container_name: digital-bast-web
+    env_file: .env
+    command: ["python", "web_server.py"]
+    expose:
+      - "5000"
+    networks:
+      - digital-bast-network
+
   app:
     image: yosdwi/digital-bast:latest
     container_name: digital-bast-app
@@ -53,6 +76,10 @@ services:
       ofelia.job-exec.step_09_send_update_notifications.container: "digital-bast-app"
       ofelia.job-exec.step_09_send_update_notifications.command: "python main.py --step step_09_send_update_notifications"
 
+      ofelia.job-exec.step_10_archive_timesheet.schedule: "5 1 * * *" # Runs daily at 01:05
+      ofelia.job-exec.step_10_archive_timesheet.container: "digital-bast-app"
+      ofelia.job-exec.step_10_archive_timesheet.command: "python main.py --step step_10_archive_timesheet"
+
   scheduler:
     image: mcuadros/ofelia:latest
     container_name: digital-bast-scheduler
@@ -62,3 +89,7 @@ services:
     restart: always
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+
+networks:
+  digital-bast-network:
+    external: true

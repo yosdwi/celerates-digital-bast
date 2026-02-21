@@ -33,8 +33,13 @@ def run():
             ids_string = ",".join(pending_comment_ids)
             where_clause = f"(comment_id,in,{ids_string})"
             existing_records_response = nocodb_processor.get_records(limit=len(pending_comment_ids), where=where_clause)
-            logged_comment_ids = {str(rec['comment_id']) for rec in existing_records_response.get('list', [])}
-            logging.info(f"Ditemukan {len(logged_comment_ids)} notifikasi yang sudah tercatat sebelumnya.")
+
+            if existing_records_response and existing_records_response.get('list'):
+                logged_comment_ids = {str(rec['comment_id']) for rec in existing_records_response.get('list', [])}
+                logging.info(f"Ditemukan {len(logged_comment_ids)} notifikasi yang sudah tercatat sebelumnya.")
+            else:
+                logged_comment_ids = set()
+                logging.warning("Tidak dapat mengambil data notifikasi yang sudah tercatat, melanjutkan tanpa filter.")
         
         success_count = 0
         new_notifications_count = 0

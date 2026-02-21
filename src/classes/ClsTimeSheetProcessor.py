@@ -307,3 +307,66 @@ class ClsTimeSheetProcessor:
             return datetime.strptime(str(value), '%H:%M').strftime(config.get('time_format', '%H:%M'))
         if format_type == 'number': return float(value) if str(value).strip() else 0.0
         return str(value)
+
+    def archive_timesheet(self, year, month):
+        source_spreadsheet_id = config.TIMESHEET_SHEET_ID
+        archive_spreadsheet_id = config.ARCHIVE_TIMESHEET_SPREADSHEET_ID
+        
+        if not source_spreadsheet_id or not archive_spreadsheet_id:
+            raise ValueError("Source or Archive Spreadsheet ID is not configured.")
+
+        source_sheet_name = "Timesheet"
+        new_sheet_name = f"Timesheet - {month} {year}"
+
+        try:
+            spreadsheet_metadata = self._retry_with_backoff(
+                lambda: self.service.spreadsheets().get(spreadsheetId=source_spreadsheet_id).execute()
+            )
+            sheets = spreadsheet_metadata.get('sheets', '')
+            source_sheet_id_gid = None
+            for sheet in sheets:
+                if sheet.get('properties', {}).get('title', '') == source_sheet_name:
+                    source_sheet_id_gid = sheet.get('properties', {}).get('sheetId')
+                    break
+            
+            if source_sheet_id_gid is None:
+                raise FileNotFoundError(f"Sheet '{source_sheet_name}' not found in the source spreadsheet.")
+
+            copy_request_body = {
+                'destinationSpreadsheetId': archive_spreadsheet_id
+            }
+            copy_result = self._retry_with_backoff(
+                lambda: self.service.spreadsheets().sheets().copyTo(
+                    spreadsheetId=source_spreadsheet_id,
+                    sheetId=source_sheet_id_gid,
+                    body=copy_request_body
+                ).execute()
+            )
+            
+            copied_sheet_id = copy_result['sheetId']
+            
+            rename_request_body = {
+                "requests": [
+                    {
+                        "updateSheetProperties": {
+                            "properties": {
+                                "sheetId": copied_sheet_id,
+                                "title": new_sheet_name
+                            },
+                            "fields": "title"
+                        }
+                    }
+                ]
+            }
+            self._retry_with_backoff(
+                lambda: self.service.spreadsheets().batchUpdate(
+                    spreadsheetId=archive_spreadsheet_id,
+                    body=rename_request_body
+                ).execute()
+            )
+            
+            print(f"Successfully archived '{source_sheet_name}' to '{new_sheet_name}' in the archive spreadsheet.")
+
+        except Exception as e:
+            print(f"Failed to archive timesheet: {e}")
+            raise
