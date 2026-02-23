@@ -3,129 +3,278 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Generate Report</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .container {
-            background-color: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-            width: 400px;
-        }
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 30px;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #555;
-            font-weight: bold;
-        }
-        select, input[type="text"] {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-sizing: border-box; /* Important */
-        }
-        button {
-            width: 100%;
-            padding: 12px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-    </style>
+    <title>Admin Dashboard | Digital BAST</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/admin_style.css') }}">
 </head>
-<body>
-    <div class="container">
-        <h1>Generate Report</h1>
-        <form id="reportForm" method="POST" target="_blank">
-            <div class="form-group">
-                <label for="report_type">Report Type</label>
-                <select id="report_type" name="report_type" required>
-                    <option value="attendance" selected>PAMA Attendance</option>
-                    <option value="timesheet">Timesheet</option>
-                    <option value="evidence">Evidence</option>
-                    <option value="tasklistiotoperation">IoT Operations Tasklist</option>
-                    <option value="tasklistdeveloper">Developer Tasklist</option>
-                    <option value="all">All Report (Comprehensive)</option>
-                </select>
+<body class="dashboard-body">
+    <div class="dashboard-wrapper">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <img src="{{ url_for('static', path='/img/logo_celerates.jpg') }}" alt="Celerates" class="logo">
+                <div class="brand-info">
+                    <h5 class="mb-0">Digital BAST</h5>
+                    <small class="text-muted">Admin Portal</small>
+                </div>
             </div>
-            <div class="form-group" id="evidence_type_group" style="display: none;">
-                <label for="evidence_type">Evidence Type</label>
-                <select id="evidence_type" name="type">
-                    <option value="iotoperations">IoT Operations</option>
-                    <option value="developer">Developer</option>
-                </select>
+
+            <div class="sidebar-user">
+                <div class="user-avatar">
+                    <i class="bi bi-person-circle"></i>
+                </div>
+                <div class="user-info">
+                    <div class="user-name">{{ user.name if user else 'Admin User' }}</div>
+                    <div class="user-role">{{ user.role if user else 'Owner' }}</div>
+                </div>
             </div>
-            <div class="form-group" id="iot_page_group" style="display: none;">
-                <label for="iot_page">IoT Operations Page</label>
-                <select id="iot_page" name="page">
-                    <option value="problem">Problem Analysis</option>
-                    <option value="aktivitas">Activities Detail</option>
-                    <option value="respon">Response Time</option>
-                </select>
+
+            <ul class="nav flex-column sidebar-nav">
+                <li class="nav-item">
+                    <a class="nav-link active" href="/">
+                        <i class="bi bi-house-door-fill"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#reports" data-bs-toggle="collapse">
+                        <i class="bi bi-file-earmark-text-fill"></i>
+                        <span>Reports</span>
+                        <i class="bi bi-chevron-down ms-auto"></i>
+                    </a>
+                    <div class="collapse show" id="reports">
+                        <ul class="nav flex-column sub-nav">
+                            <li class="nav-item">
+                                <a class="nav-link sub-link active" href="#" onclick="setReportType('iotoperation')">
+                                    <i class="bi bi-cpu"></i>
+                                    IoT Operations
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link sub-link" href="#" onclick="setReportType('developer')">
+                                    <i class="bi bi-code-slash"></i>
+                                    Developer
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+                <!-- <li class="nav-item">
+                    <a class="nav-link" href="#system" data-bs-toggle="collapse">
+                        <i class="bi bi-gear-fill"></i>
+                        <span>System</span>
+                        <i class="bi bi-chevron-down ms-auto"></i>
+                    </a>
+                    <div class="collapse" id="system">
+                        <ul class="nav flex-column sub-nav">
+                            <li class="nav-item">
+                                <a class="nav-link sub-link" href="#" onclick="showSettings()">
+                                    <i class="bi bi-sliders"></i>
+                                    Settings
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link sub-link" href="#" onclick="showLogs()">
+                                    <i class="bi bi-list-ul"></i>
+                                    Logs
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li> -->
+            </ul>
+
+            <div class="sidebar-footer">
+                <a href="/auth/logout" class="nav-link logout-link" onclick="return confirm('Are you sure you want to logout?')">
+                    <i class="bi bi-box-arrow-left"></i>
+                    <span>Logout</span>
+                </a>
             </div>
-            <div class="form-group" id="dev_page_group" style="display: none;">
-                <label for="dev_page">Developer Page</label>
-                <select id="dev_page" name="page">
-                    <option value="pelaksanaan">Pelaksanaan Pekerjaan</option>
-                    <option value="kualitas">Kualitas Kode</option>
-                    <option value="rilis">Waktu Rilis</option>
-                    <option value="support">Dukungan Support</option>
-                </select>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="content-header">
+                <div class="header-left">
+                    <h1 class="page-title">Report BAST</h1>
+                    <!-- <p class="page-subtitle">Generate comprehensive PAMA BAST reports</p> -->
+                </div>
+                <div class="header-right">
+                    <div class="current-time" id="currentTime"></div>
+                </div>
+            </header>
+
+            <!-- Quick Stats Cards -->
+            <!-- <div class="row stats-row">
+                <div class="col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-icon iot-bg">
+                            <i class="bi bi-cpu"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h6>IoT Operations</h6>
+                            <div class="stat-value">24/7</div>
+                            <small class="text-muted">Active Monitoring</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-icon dev-bg">
+                            <i class="bi bi-code-slash"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h6>Development</h6>
+                            <div class="stat-value">98%</div>
+                            <small class="text-muted">Code Quality</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-icon report-bg">
+                            <i class="bi bi-file-earmark-text"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h6>Reports</h6>
+                            <div class="stat-value" id="totalReports">--</div>
+                            <small class="text-muted">Generated</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-icon uptime-bg">
+                            <i class="bi bi-speedometer2"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h6>System</h6>
+                            <div class="stat-value">99.9%</div>
+                            <small class="text-muted">Uptime</small>
+                        </div>
+                    </div>
+                </div>
+            </div> -->
+
+            <!-- Report Generation Form -->
+            <div class="card main-card">
+                <div class="card-header">
+                    <div class="card-header-content">
+                        <h5 class="mb-0">
+                            <i class="bi bi-file-earmark-plus me-2"></i>
+                            Generate Report
+                        </h5>
+                        <!-- <small class="text-muted">Configure and generate comprehensive reports</small> -->
+                    </div>
+                </div>
+                <div class="card-body">
+                    <form id="reportForm" action="/report/all" method="POST" target="_blank" class="report-form">
+                        <div class="form-section">
+                            <h6 class="form-section-title">
+                                <i class="bi bi-tag me-2"></i>Report Configuration
+                            </h6>
+
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label for="reportType" class="form-label">Report Category</label>
+                                        <select id="reportType" name="type" class="form-select" required>
+                                            <option value="iotoperation" selected>IoT Operations</option>
+                                            <option value="developer">Developer</option>
+                                        </select>
+                                        <div class="form-help">
+                                            <small class="text-muted">Select the category or role</small>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label for="reportYear" class="form-label">Year</label>
+                                        <select id="reportYear" name="year" class="form-select" required>
+                                            <!-- Populated by JavaScript -->
+                                        </select>
+                                        <div class="form-help">
+                                            <small class="text-muted">Report year</small>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label for="reportMonth" class="form-label">Month</label>
+                                        <select id="reportMonth" name="month" class="form-select" required>
+                                            <!-- Populated by JavaScript -->
+                                        </select>
+                                        <div class="form-help">
+                                            <small class="text-muted">Report month</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-outline-secondary" onclick="resetForm()">
+                                <i class="bi bi-arrow-clockwise me-2"></i>Reset
+                            </button>
+                            <button type="submit" class="btn btn-primary btn-generate" id="generateBtn">
+                                <span class="btn-content">
+                                    <i class="bi bi-file-earmark-arrow-down me-2"></i>
+                                    Generate Report
+                                </span>
+                                <span class="btn-loading d-none">
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    Generating...
+                                </span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
             </div>
-            <div class="form-group" id="all_type_group" style="display: none;">
-                <label for="all_type">Report Type</label>
-                <select id="all_type" name="type">
-                    <option value="iotoperation">IoT Operations</option>
-                    <option value="developer">Developer</option>
-                </select>
+
+            <!-- Recent Activity -->
+            <div class="card activity-card">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="bi bi-clock-history me-2"></i>
+                        Recent Activity
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="activity-list" id="activityList">
+                        <div class="activity-item">
+                            <div class="activity-icon">
+                                <i class="bi bi-file-earmark-check"></i>
+                            </div>
+                            <div class="activity-content">
+                                <div class="activity-text">IoT Operations report generated</div>
+                                <div class="activity-time">Just now</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="form-group">
-                <label for="year">Year</label>
-                <select id="year" name="year" required>
-                    <!-- Options will be populated by JavaScript -->
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="month">Month</label>
-                <select id="month" name="month" required>
-                    <!-- Options will be populated by JavaScript -->
-                </select>
-            </div>
-            <button type="submit">Generate Report</button>
-        </form>
+        </main>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
-            const yearSelect = document.getElementById('year');
-            const monthSelect = document.getElementById('month');
-            const reportTypeSelect = document.getElementById('report_type');
-            const reportForm = document.getElementById('reportForm');
+            initializeDateSelectors();
+            updateCurrentTime();
+            setupFormHandlers();
+            loadActivityLog();
+
+            // Update time every minute
+            setInterval(updateCurrentTime, 60000);
+        });
+
+        function initializeDateSelectors() {
+            const yearSelect = document.getElementById('reportYear');
+            const monthSelect = document.getElementById('reportMonth');
 
             const currentYear = new Date().getFullYear();
             const currentMonth = new Date().getMonth() + 1;
@@ -140,83 +289,111 @@
 
             // Populate months
             const months = [
-                { value: 1, name: 'January' }, { value: 2, name: 'February' },
-                { value: 3, name: 'March' }, { value: 4, name: 'April' },
-                { value: 5, name: 'May' }, { value: 6, name: 'June' },
-                { value: 7, name: 'July' }, { value: 8, name: 'August' },
-                { value: 9, name: 'September' }, { value: 10, name: 'October' },
-                { value: 11, name: 'November' }, { value: 12, name: 'December' }
+                'January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'
             ];
-
-            months.forEach(month => {
+            months.forEach((month, index) => {
                 const option = document.createElement('option');
-                option.value = month.value;
-                option.textContent = month.name;
+                option.value = index + 1;
+                option.textContent = month;
                 monthSelect.appendChild(option);
             });
-            
+
             // Set defaults
             yearSelect.value = currentYear;
             monthSelect.value = currentMonth;
+        }
 
-            const evidenceTypeGroup = document.getElementById('evidence_type_group');
-            const iotPageGroup = document.getElementById('iot_page_group');
-            const devPageGroup = document.getElementById('dev_page_group');
-            const allTypeGroup = document.getElementById('all_type_group');
+        function updateCurrentTime() {
+            const now = new Date();
+            const options = {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            };
+            document.getElementById('currentTime').textContent = now.toLocaleDateString('en-US', options);
+        }
 
-            // Update form action and visibility based on selection
-            function updateFormAction() {
-                const reportType = reportTypeSelect.value;
-                if (reportType === 'attendance') {
-                    reportForm.action = '/report/pama/attendance';
-                    evidenceTypeGroup.style.display = 'none';
-                    iotPageGroup.style.display = 'none';
-                    devPageGroup.style.display = 'none';
-                    allTypeGroup.style.display = 'none';
-                    yearSelect.parentElement.style.display = 'block';
-                } else if (reportType === 'timesheet') {
-                    reportForm.action = '/report/timesheet';
-                    evidenceTypeGroup.style.display = 'none';
-                    iotPageGroup.style.display = 'none';
-                    devPageGroup.style.display = 'none';
-                    allTypeGroup.style.display = 'none';
-                    yearSelect.parentElement.style.display = 'block';
-                } else if (reportType === 'evidence') {
-                    reportForm.action = '/report/evidence';
-                    evidenceTypeGroup.style.display = 'block';
-                    iotPageGroup.style.display = 'none';
-                    devPageGroup.style.display = 'none';
-                    allTypeGroup.style.display = 'none';
-                    yearSelect.parentElement.style.display = 'none';
-                } else if (reportType === 'tasklistiotoperation') {
-                    reportForm.action = '/report/tasklistiotoperation';
-                    evidenceTypeGroup.style.display = 'none';
-                    iotPageGroup.style.display = 'block';
-                    devPageGroup.style.display = 'none';
-                    allTypeGroup.style.display = 'none';
-                    yearSelect.parentElement.style.display = 'none';
-                } else if (reportType === 'tasklistdeveloper') {
-                    reportForm.action = '/report/tasklistdeveloper';
-                    evidenceTypeGroup.style.display = 'none';
-                    iotPageGroup.style.display = 'none';
-                    devPageGroup.style.display = 'block';
-                    allTypeGroup.style.display = 'none';
-                    yearSelect.parentElement.style.display = 'none';
-                } else if (reportType === 'all') {
-                    reportForm.action = '/report/all';
-                    evidenceTypeGroup.style.display = 'none';
-                    iotPageGroup.style.display = 'none';
-                    devPageGroup.style.display = 'none';
-                    allTypeGroup.style.display = 'block';
-                    yearSelect.parentElement.style.display = 'none';
-                }
+        function setupFormHandlers() {
+            document.getElementById('reportForm').addEventListener('submit', function(e) {
+                const btn = document.getElementById('generateBtn');
+                const btnContent = btn.querySelector('.btn-content');
+                const btnLoading = btn.querySelector('.btn-loading');
+
+                btn.disabled = true;
+                btnContent.classList.add('d-none');
+                btnLoading.classList.remove('d-none');
+
+                // Add activity
+                addActivity('Report generation started', 'info');
+
+                // Re-enable button after 5 seconds
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btnContent.classList.remove('d-none');
+                    btnLoading.classList.add('d-none');
+                    addActivity('Report generated successfully', 'success');
+                }, 5000);
+            });
+        }
+
+        function setReportType(type) {
+            document.getElementById('reportType').value = type;
+
+            // Update active state
+            document.querySelectorAll('.sub-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            event.target.classList.add('active');
+        }
+
+        function resetForm() {
+            document.getElementById('reportForm').reset();
+            initializeDateSelectors();
+        }
+
+        function addActivity(text, type = 'info') {
+            const activityList = document.getElementById('activityList');
+            const item = document.createElement('div');
+            item.className = 'activity-item';
+
+            const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : 'info-circle';
+
+            item.innerHTML = `
+                <div class="activity-icon">
+                    <i class="bi bi-${icon}"></i>
+                </div>
+                <div class="activity-content">
+                    <div class="activity-text">${text}</div>
+                    <div class="activity-time">Just now</div>
+                </div>
+            `;
+
+            activityList.insertBefore(item, activityList.firstChild);
+
+            // Keep only last 5 activities
+            while (activityList.children.length > 5) {
+                activityList.removeChild(activityList.lastChild);
             }
+        }
 
-            reportTypeSelect.addEventListener('change', updateFormAction);
-            
-            // Initial call
-            updateFormAction();
-        });
+        function loadActivityLog() {
+            // Simulate loading recent activities
+            setTimeout(() => {
+                document.getElementById('totalReports').textContent = Math.floor(Math.random() * 50) + 100;
+            }, 500);
+        }
+
+        function showSettings() {
+            alert('Settings panel - Coming soon!');
+        }
+
+        function showLogs() {
+            alert('System logs - Coming soon!');
+        }
     </script>
 </body>
 </html>

@@ -35,7 +35,6 @@ class ClsNocoDBProcessor:
         try:
             endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
             payload = data
-            # print(payload)
             response = self.session.post(endpoint, headers=self.headers, json=payload, timeout=30)
 
             if response.status_code in [200, 201]:
@@ -163,16 +162,15 @@ class ClsNocoDBProcessor:
 
     def upsert_timesheet(self, timesheet_data: dict):
         try:
-            employee_data = timesheet_data.get("Name Table")
-            if not employee_data or not isinstance(employee_data, list) or not employee_data[0]:
+            employee_id = timesheet_data.get("Name Table")
+            if not employee_id:
                 return None
 
-            for key in ["Start Time Table", "End Time Table", "Task List Table"]:
+            for key in ["Start Time Table", "End Time Table", "Task List Table", "Task List IoT Table"]:
                 if timesheet_data.get(key) is None:
-                    timesheet_data[key] = []
+                    timesheet_data[key] = None
 
             date = timesheet_data["Date"]
-            employee_id = timesheet_data["Name Table"][0]
             unique_key = self.generate_unique_key(date, str(employee_id))
             timesheet_data["Unique Key"] = unique_key
 
@@ -216,6 +214,21 @@ class ClsNocoDBProcessor:
             logging.error(f"Update record gagal: {e}")
             return None
 
+    def create_record_link(self, record_id: int, link_field_id: str, linked_record_id: int):
+        """Create a link between two records using NocoDB Link API"""
+        try:
+            endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/links/{link_field_id}/records/{record_id}"
+            payload = {"Id": linked_record_id}
+            response = self.session.post(endpoint, headers=self.headers, json=payload, timeout=30)
+            if response.status_code in [200, 201]:
+                return True
+            else:
+                logging.error(f"Failed to create link: {response.status_code} - {response.text}")
+                return False
+        except Exception as e:
+            logging.error(f"Error creating link: {e}")
+            return False
+
     def batch_upsert_timesheets(self, records: list):
         if not records:
             return 0
@@ -225,19 +238,17 @@ class ClsNocoDBProcessor:
         records_to_update = {}
 
         for record in records:
-            employee_data = record.get("Name Table")
-            if not employee_data or not isinstance(employee_data, list) or not employee_data[0]:
+            employee_id = record.get("_employee_id")
+            if not employee_id:
                 continue
-            
-            for key in ["Start Time Table", "End Time Table", "Task List Table"]:
-                if record.get(key) is None:
-                    record[key] = []
 
-            date = record["Date"]
-            employee_id = employee_data[0]
+            # Clean record for API (remove linking metadata)
+            clean_record = {k: v for k, v in record.items() if not k.startswith('_')}
+
+            date = clean_record["Date"]
             unique_key = self.generate_unique_key(date, str(employee_id))
-            record["Unique Key"] = unique_key
-            records_to_update[unique_key] = record
+            clean_record["Unique Key"] = unique_key
+            records_to_update[unique_key] = record  # Keep original with metadata
 
         unique_keys = list(records_to_update.keys())
         existing_keys = {}
@@ -258,11 +269,12 @@ class ClsNocoDBProcessor:
 
         # Separate records for update vs create
         for unique_key, record_data in records_to_update.items():
+            clean_record = {k: v for k, v in record_data.items() if not k.startswith('_')}
             if unique_key in existing_keys:
                 record_id = existing_keys[unique_key]
                 updates_to_process.append((record_id, record_data))
             else:
-                records_to_create_data.append(record_data)
+                records_to_create_data.append((clean_record, record_data))  # (clean, with_metadata)
 
         # Process updates in batches with progress indicator
         if updates_to_process:
@@ -276,7 +288,10 @@ class ClsNocoDBProcessor:
                 batch_success = 0
 
                 for record_id, record_data in batch:
-                    if self.update_record(record_id, record_data):
+                    clean_record = {k: v for k, v in record_data.items() if not k.startswith('_')}
+                    if self.update_record(record_id, clean_record):
+                        # Create links after successful update
+                        self._create_timesheet_links(record_id, record_data)
                         batch_success += 1
 
                 success_count += batch_success
@@ -288,12 +303,48 @@ class ClsNocoDBProcessor:
                     time.sleep(1)
 
         if records_to_create_data:
-            created_records = self.bulk_create_records(records_to_create_data)
-            if created_records:
+            clean_records = [clean_record for clean_record, _ in records_to_create_data]
+            created_response = self.bulk_create_records(clean_records)
+            if created_response:
+                created_records = created_response if isinstance(created_response, list) else [created_response]
+                # Create links for newly created records
+                for i, created_record in enumerate(created_records):
+                    record_id = created_record.get('Id') or created_record.get('id')
+                    if record_id and i < len(records_to_create_data):
+                        _, original_record = records_to_create_data[i]
+                        self._create_timesheet_links(record_id, original_record)
                 success_count += len(created_records)
 
         return success_count
 
+    def _create_timesheet_links(self, timesheet_record_id: int, record_data: dict):
+        """Create all links for a timesheet record"""
+        # Link field IDs from swagger.json
+        LINK_FIELD_IDS = {
+            "Name Table": "cwlgzzs7wg5fv4d",
+            "Start Time Table": "caeg5qn4pbx8jrb",
+            "End Time Table": "csobztmen7cmopi",
+            "Task List Table": "c80cdrlxfnfbcj5",
+            "Task List IoT Table": "cinouioq3wu114o"
+        }
+
+        # Link employee
+        employee_id = record_data.get("_employee_id")
+        if employee_id:
+            self.create_record_link(timesheet_record_id, LINK_FIELD_IDS["Name Table"], employee_id)
+
+        # Link attendance for start/end time
+        attendance_id = record_data.get("_attendance_id")
+        if attendance_id:
+            self.create_record_link(timesheet_record_id, LINK_FIELD_IDS["Start Time Table"], attendance_id)
+            self.create_record_link(timesheet_record_id, LINK_FIELD_IDS["End Time Table"], attendance_id)
+
+        # Link tasks
+        task_ids = record_data.get("_task_ids", [])
+        task_field_name = record_data.get("_task_field_name")
+        if task_ids and task_field_name and task_field_name in LINK_FIELD_IDS:
+            for task_id in task_ids[:1]:  # Only link first task as it's single field
+                self.create_record_link(timesheet_record_id, LINK_FIELD_IDS[task_field_name], task_id)
 
     def generate_task_unique_key(self, date: str, employee_id: str, task_list: str) -> str:
         clean_task = ''.join(c for c in task_list if c.isalnum() or c in ' _-').strip()

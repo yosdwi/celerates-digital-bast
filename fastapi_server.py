@@ -1,29 +1,188 @@
 import os
 import calendar
-# import psycopg2
-# import httpx
+import hashlib
+import secrets
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
-from typing import Optional
+from typing import Optional, Dict
 from pathlib import Path
 import re
+import psycopg2
+import bcrypt
 
-from fastapi import FastAPI, HTTPException, Depends, Request, Form, File, UploadFile
-from fastapi.responses import HTMLResponse, FileResponse, Response
+from fastapi import FastAPI, HTTPException, Depends, Request, Form, File, UploadFile, status
+from fastapi.responses import HTMLResponse, FileResponse, Response, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.middleware.sessions import SessionMiddleware
 
 from src import config
 from src.classes.ClsNocoDBProcessor import ClsNocoDBProcessor
 
-# Initialize FastAPI App
 app = FastAPI(title="Digital BAST Admin", version="1.0.0")
+
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", secrets.token_urlsafe(32)))
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# No auth for now - will add later
+active_sessions: Dict[str, Dict] = {}
 
-# --- Helper Functions ---
+def get_postgres_connection():
+    """Get PostgreSQL connection from DB_URL in .env"""
+    try:
+        db_url = os.getenv('DB_URL', '')
+        if not db_url:
+            return None
+
+        parsed = urlparse(db_url)
+        conn = psycopg2.connect(
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            database=parsed.path[1:],
+            user=parsed.username,
+            password=parsed.password,
+            sslmode='require'
+        )
+        return conn
+    except Exception as e:
+        return None
+
+def verify_password(plain_password: str, hashed_password: str, salt: str) -> bool:
+    """Verify password against NocoDB's hash + salt"""
+    try:
+        if not hashed_password or not salt:
+            return False
+
+        if hashed_password.startswith('$2b$') or hashed_password.startswith('$2a$'):
+            try:
+                return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+            except:
+                pass
+
+        algorithms_to_try = [
+            lambda p, s: hashlib.sha256((p + s).encode()).hexdigest(),
+            lambda p, s: hashlib.sha1((p + s).encode()).hexdigest(),
+            lambda p, s: hashlib.md5((p + s).encode()).hexdigest(),
+            lambda p, s: hashlib.sha256((s + p).encode()).hexdigest(),
+            lambda p, s: hashlib.sha1((s + p).encode()).hexdigest(),
+            lambda p, s: bcrypt.hashpw((p + s).encode('utf-8'), salt.encode('utf-8') if len(salt) >= 22 else bcrypt.gensalt()).decode('utf-8'),
+        ]
+
+        for algorithm in algorithms_to_try:
+            try:
+                computed_hash = algorithm(plain_password, salt)
+                if computed_hash == hashed_password:
+                    return True
+            except Exception:
+                continue
+
+        if hashed_password == plain_password:
+            return True
+
+        return False
+
+    except Exception as e:
+        return False
+
+def authenticate_user(email: str, password: str) -> Optional[Dict]:
+    """Authenticate user with NocoDB PostgreSQL users table"""
+    try:
+        conn = get_postgres_connection()
+        if not conn:
+            return None
+
+        cursor = conn.cursor()
+
+        query = """
+            SELECT
+                u.id,
+                u.email,
+                u.password,
+                u.salt,
+                u.display_name,
+                u.user_name,
+                u.blocked,
+                u.is_deleted,
+                bu.roles as base_role
+            FROM nc_users_v2 u
+            LEFT JOIN nc_base_users_v2 bu ON u.id = bu.fk_user_id AND bu.base_id = %s
+            WHERE u.email = %s
+            AND (u.blocked IS NULL OR u.blocked = FALSE)
+            AND (u.is_deleted IS NULL OR u.is_deleted = FALSE)
+        """
+
+        cursor.execute(query, (config.APP_BASE_ID, email))
+        user_data = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        if not user_data:
+            return None
+
+        (
+            user_id, user_email, stored_password, salt,
+            display_name, user_name, blocked, is_deleted, base_role
+        ) = user_data
+
+        if base_role != 'owner':
+            return None
+
+        if not verify_password(password, stored_password, salt):
+            return None
+
+        return {
+            'id': user_id,
+            'name': display_name or user_name or email.split('@')[0],
+            'email': user_email,
+            'role': base_role
+        }
+
+    except Exception as e:
+        return None
+
+def create_user_session(user: Dict) -> str:
+    """Create a new user session and return session ID"""
+    session_id = secrets.token_urlsafe(32)
+    active_sessions[session_id] = {
+        'user': user,
+        'created_at': datetime.utcnow(),
+        'last_accessed': datetime.utcnow()
+    }
+    return session_id
+
+def get_current_user(request: Request) -> Optional[Dict]:
+    """Get current authenticated user from session"""
+    session_id = request.session.get('session_id')
+    if not session_id or session_id not in active_sessions:
+        return None
+
+    session_data = active_sessions[session_id]
+    session_data['last_accessed'] = datetime.utcnow()
+
+    if datetime.utcnow() - session_data['created_at'] > timedelta(hours=24):
+        del active_sessions[session_id]
+        return None
+
+    return session_data['user']
+
+def logout_user(request: Request) -> bool:
+    """Logout user and cleanup session"""
+    session_id = request.session.get('session_id')
+    if session_id and session_id in active_sessions:
+        del active_sessions[session_id]
+        request.session.clear()
+        return True
+    return False
+
+def require_auth(request: Request):
+    """Dependency to require authentication for protected routes"""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return user
 
 def get_dynamic_month_dates(year, month):
     """Calculates the start and end dates for a given year and month."""
@@ -113,12 +272,47 @@ def format_single_nocodb_record(record, all_work_descs, employee_role=None):
         'IsManualEdit': is_manual_edit
     }
 
-# --- Routes ---
+@app.get("/login", response_class=HTMLResponse)
+async def login(request: Request, error: str = None):
+    """Serves the login page."""
+    user = get_current_user(request)
+    if user:
+        return RedirectResponse(url="/", status_code=302)
+
+    return templates.TemplateResponse('login.html', {
+        "request": request,
+        "error": error
+    })
+
+@app.post("/auth/login")
+async def auth_login(request: Request, email: str = Form(...), password: str = Form(...)):
+    """Handle login form submission"""
+    user = authenticate_user(email, password)
+
+    if not user:
+        return templates.TemplateResponse('login.html', {
+            "request": request,
+            "error": "Invalid email or password, or insufficient permissions"
+        })
+
+    session_id = create_user_session(user)
+    request.session['session_id'] = session_id
+
+    return RedirectResponse(url="/", status_code=302)
+
+@app.get("/auth/logout")
+async def auth_logout(request: Request):
+    """Handle user logout"""
+    logout_user(request)
+    return RedirectResponse(url="/login", status_code=302)
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    """Serves the main page with the report generation form."""
-    return templates.TemplateResponse('index.html', {"request": request})
+async def index(request: Request, user: Dict = Depends(require_auth)):
+    """Serves the main page with the report generation form (protected route)."""
+    return templates.TemplateResponse('index.html', {
+        "request": request,
+        "user": user
+    })
 
 @app.post("/report/pama/attendance")
 async def generate_pama_attendance_report(
@@ -130,7 +324,6 @@ async def generate_pama_attendance_report(
     Generates and serves a consolidated attendance report for ALL employees
     """
     try:
-        # Validate input
         current_year = datetime.now().year
         if year < 2020 or year > current_year + 1:
             raise HTTPException(400, "Invalid year")
@@ -140,9 +333,6 @@ async def generate_pama_attendance_report(
     except ValueError:
         raise HTTPException(400, "Invalid year/month format")
 
-    print(f"Generating PAMA attendance report for {calendar.month_name[month]} {year}")
-
-    # 1. Fetch Data
     employee_table = config.NOCODB_TABLES.get("employee_data")
     attendance_table = config.NOCODB_TABLES.get("attendance")
     if not all([employee_table, attendance_table]):
@@ -157,12 +347,10 @@ async def generate_pama_attendance_report(
 
     start_date, end_date = get_dynamic_month_dates(year, month)
 
-    # 2. Process Each Employee
     reports_data = []
     for name, info in employee_mapping.items():
         display_nrp = info.get('nrp') or info.get('employee_id')
         if not display_nrp:
-            print(f"Skipping {name} as they have no 'nrp' or 'employee_id'.")
             continue
 
         where_clause = f"(Name,like,%{name.strip().title()}%)"
@@ -183,7 +371,6 @@ async def generate_pama_attendance_report(
                 })
 
         if not attendance_data:
-            print(f"No attendance data for {name} in the period. Skipping from report.")
             continue
 
         attendance_data.sort(key=lambda x: datetime.strptime(x['tanggal_kehadiran'], '%d/%m/%Y'))
@@ -194,7 +381,6 @@ async def generate_pama_attendance_report(
             'attendance_rows': attendance_data
         })
 
-    # 3. Render and return
     final_context = {
         'periode': f"{start_date.strftime('%d %B %Y')} - {end_date.strftime('%d %B %Y')}",
         'dicetak': datetime.now().strftime('%d %B %Y %H:%M:%S'),
@@ -202,7 +388,6 @@ async def generate_pama_attendance_report(
         'logo_url': '/static/img/logo_pama.png'
     }
 
-    print(f"Successfully generated consolidated report for {len(reports_data)} employees.")
     return templates.TemplateResponse('attendance_report_template.html', {
         "request": request,
         **final_context
@@ -226,8 +411,6 @@ async def generate_timesheet_report(
     except ValueError:
         raise HTTPException(400, "Invalid year/month format")
 
-    print(f"Generating timesheet report for {calendar.month_name[month]} {year}")
-    
     employee_table = config.NOCODB_TABLES.get("employee_data")
     timesheet_table = config.NOCODB_TABLES.get("timesheet")
     if not all([employee_table, timesheet_table]):
@@ -282,7 +465,6 @@ async def generate_timesheet_report(
             current_date += timedelta(days=1)
         
         if not any(row['Activity'] for row in full_month_data):
-            print(f"No timesheet activity for {name} in {month_name} {year}. Skipping.")
             continue
 
         total_break_hours = sum(float(row.get('Break Hours', 0) or 0) for row in full_month_data if row.get('Break Hours'))
@@ -310,7 +492,6 @@ async def generate_timesheet_report(
         'logo_url': '/static/img/logo_pama.png'
     }
 
-    print(f"Successfully generated consolidated timesheet for {len(reports_data)} employees.")
     return templates.TemplateResponse('timesheet_report_template.html', {
         "request": request,
         **final_context
@@ -383,15 +564,12 @@ async def generate_tasklistdeveloper_report(
         page: "pelaksanaan", "kualitas", "rilis", or "support"
         month: Month number (1-12) from form
     """
-
-    # Validate inputs
     if month < 1 or month > 12:
         raise HTTPException(400, "Invalid month")
 
     if page not in ["pelaksanaan", "kualitas", "rilis", "support"]:
         raise HTTPException(400, "Page must be 'pelaksanaan', 'kualitas', 'rilis', or 'support'")
 
-    # Indonesian months mapping
     indonesian_months = {
         1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
         5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
@@ -400,19 +578,13 @@ async def generate_tasklistdeveloper_report(
 
     month_name = indonesian_months[month]
 
-    print(f"Generating Developer {page} report for {month_name}")
-
-    # Process data based on page type
     if page == "pelaksanaan":
         return await _generate_dev_pelaksanaan_page(request, month_name)
     else:
-        # For kualitas, rilis, support - get data from NocoDB
         return await _generate_dev_kategori_page(request, page, month_name)
 
 async def _generate_dev_pelaksanaan_page(request: Request, month_name: str):
     """Generate pelaksanaan page with static SLA data"""
-
-    # Static SLA data as per the provided image
     pelaksanaan_data = [
         {
             "sla": "Kualitas Kode",
@@ -439,16 +611,12 @@ async def _generate_dev_pelaksanaan_page(request: Request, month_name: str):
 
 async def _generate_dev_kategori_page(request: Request, page: str, month_name: str):
     """Generate kategori-based pages from NocoDB data"""
-
-    # Get Developer tasklist table
     table_id = config.NOCODB_TABLES.get("tasklist")
     if not table_id:
         raise HTTPException(500, "Developer tasklist table not found in config")
 
-    # Initialize NocoDB processor
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
-    # Map page to Kategori values
     kategori_mapping = {
         "kualitas": "Detail Aktivitas Kualitas Kode",
         "rilis": "Detail Aktivitas Waktu Rilis",
@@ -459,13 +627,9 @@ async def _generate_dev_kategori_page(request: Request, page: str, month_name: s
     if not kategori_name:
         raise HTTPException(400, f"Invalid page: {page}")
 
-    # Fetch records with month, kategori, and status filter
     where_clause = f"(Month,eq,{month_name})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
     records = nocodb.get_records(limit=2000, where=where_clause).get('list', [])
 
-    print(f"Found {len(records)} records for {kategori_name} in {month_name}")
-
-    # Process records based on page type
     if page == "kualitas":
         return await _generate_dev_kualitas_data(request, records, month_name)
     elif page == "rilis":
@@ -475,7 +639,6 @@ async def _generate_dev_kategori_page(request: Request, page: str, month_name: s
 
 async def _generate_dev_kualitas_data(request: Request, records: list, month_name: str):
     """Generate kualitas kode data"""
-
     kualitas_data = []
     for i, record in enumerate(records, 1):
         task_list = record.get('Task List', 'No Task Description')
@@ -487,7 +650,6 @@ async def _generate_dev_kualitas_data(request: Request, records: list, month_nam
         end_date = record.get('End Date', '')
         pencapaian = record.get('Pencapaian', 0)
 
-        # Format dates
         formatted_start = start_date.replace('-', '/') if start_date else 'N/A'
         formatted_end = end_date.replace('-', '/') if end_date else 'N/A'
 
@@ -502,7 +664,6 @@ async def _generate_dev_kualitas_data(request: Request, records: list, month_nam
             "pencapaian": str(pencapaian)
         })
 
-    # Calculate summary achievement
     total_pencapaian = sum(int(record.get('Pencapaian', 0)) for record in records if record.get('Pencapaian'))
     avg_pencapaian = total_pencapaian // len(records) if records else 0
 
@@ -515,7 +676,6 @@ async def _generate_dev_kualitas_data(request: Request, records: list, month_nam
 
 async def _generate_dev_rilis_data(request: Request, records: list, month_name: str):
     """Generate waktu rilis data"""
-
     rilis_data = []
     for i, record in enumerate(records, 1):
         task_list = record.get('Task List', 'No Task Description')
@@ -527,7 +687,6 @@ async def _generate_dev_rilis_data(request: Request, records: list, month_name: 
         end_date = record.get('End Date', '')
         pencapaian = record.get('Pencapaian', 0)
 
-        # Format dates
         formatted_start = start_date.replace('-', '/') if start_date else 'N/A'
         formatted_end = end_date.replace('-', '/') if end_date else 'N/A'
 
@@ -542,7 +701,6 @@ async def _generate_dev_rilis_data(request: Request, records: list, month_name: 
             "pencapaian": str(pencapaian)
         })
 
-    # Calculate summary achievement
     total_pencapaian = sum(int(record.get('Pencapaian', 0)) for record in records if record.get('Pencapaian'))
     avg_pencapaian = total_pencapaian // len(records) if records else 0
 
@@ -555,7 +713,6 @@ async def _generate_dev_rilis_data(request: Request, records: list, month_name: 
 
 async def _generate_dev_support_data(request: Request, records: list, month_name: str):
     """Generate dukungan support data"""
-
     support_data = []
     for i, record in enumerate(records, 1):
         task_list = record.get('Task List', 'No Task Description')
@@ -567,7 +724,6 @@ async def _generate_dev_support_data(request: Request, records: list, month_name
         end_date = record.get('End Date', '')
         pencapaian = record.get('Pencapaian', 0)
 
-        # Format dates
         formatted_start = start_date.replace('-', '/') if start_date else 'N/A'
         formatted_end = end_date.replace('-', '/') if end_date else 'N/A'
 
@@ -582,7 +738,6 @@ async def _generate_dev_support_data(request: Request, records: list, month_name
             "pencapaian": str(pencapaian)
         })
 
-    # Calculate summary achievement
     total_pencapaian = sum(int(record.get('Pencapaian', 0)) for record in records if record.get('Pencapaian'))
     avg_pencapaian = total_pencapaian // len(records) if records else 0
 
@@ -593,11 +748,9 @@ async def _generate_dev_support_data(request: Request, records: list, month_name
         "month": month_name
     })
 
-# Keep the old test endpoint for development
 @app.get("/tasklistdevelopertest", response_class=HTMLResponse)
 async def tasklistdeveloper_test(request: Request, page: str = "pelaksanaan"):
     """Test endpoint for task list developer templates with dummy data"""
-
     if page == "pelaksanaan":
         dummy_pelaksanaan_data = [
             {"sla": "Kualitas Kode", "parameter": "95% fitur yang dirilis bebas dari bug mayor", "pencapaian": "100"},
@@ -689,7 +842,6 @@ async def tasklistdeveloper_test(request: Request, page: str = "pelaksanaan"):
         })
 
     else:
-        # Default ke pelaksanaan
         return await tasklistdeveloper_test(request, "pelaksanaan")
 
 @app.post("/report/tasklistiotoperation")
@@ -705,15 +857,12 @@ async def generate_tasklistiotoperation_report(
         page: "problem", "aktivitas", or "respon"
         month: Month number (1-12) from form
     """
-
-    # Validate inputs
     if month < 1 or month > 12:
         raise HTTPException(400, "Invalid month")
 
     if page not in ["problem", "aktivitas", "respon"]:
         raise HTTPException(400, "Page must be 'problem', 'aktivitas', or 'respon'")
 
-    # Indonesian months mapping
     indonesian_months = {
         1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
         5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
@@ -722,26 +871,15 @@ async def generate_tasklistiotoperation_report(
 
     month_name = indonesian_months[month]
 
-    # Get IoT tasklist table
     table_id = config.NOCODB_TABLES.get("tasklist_iot")
     if not table_id:
         raise HTTPException(500, "IoT tasklist table not found in config")
 
-    print(f"Generating IoT Operations {page} report for {month_name}")
-
-    # Initialize NocoDB processor
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
-    # Fetch records with month and status filter
     where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
     records = nocodb.get_records(limit=2000, where=where_clause).get('list', [])
 
-    if not records:
-        print(f"No IoT Operations records found for {month_name}")
-
-    print(f"Found {len(records)} IoT Operations records for {month_name}")
-
-    # Process data based on page type
     if page == "problem":
         return await _generate_iot_problem_page(request, records, month_name)
     elif page == "aktivitas":
@@ -751,8 +889,6 @@ async def generate_tasklistiotoperation_report(
 
 async def _generate_iot_problem_page(request: Request, records: list, month_name: str):
     """Generate problem formulas page - using the specific formula structure from requirements"""
-
-    # Problem formulas as per the provided image/requirements
     problem_data = [
         {
             "object": "Aktual Waktu Respon (menit)",
@@ -795,55 +931,41 @@ async def _generate_iot_problem_page(request: Request, records: list, month_name
 
 async def _generate_iot_aktivitas_page(request: Request, records: list, month_name: str):
     """Generate activities page from Developer tasklist for Engineer Manage Service"""
-
-    # Get Developer tasklist table to fetch Engineer Manage Service data
     dev_table_id = config.NOCODB_TABLES.get("tasklist")
     if not dev_table_id:
-        # Fallback to IoT records if Developer table not available
         return await _generate_iot_aktivitas_fallback(request, records, month_name)
 
-    # Initialize Developer tasklist processor
     dev_nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, dev_table_id)
 
-    # Fetch records from Developer tasklist where PIC is the Engineer Manage Service
-    # Based on tasklist-iot.json, the Engineer Manage Service is "Muhammad Fauzan Acyuto"
     engineer_manage_service = "Muhammad Fauzan Acyuto"
     where_clause = f"(Month,eq,{month_name})~and(PIC,like,%{engineer_manage_service}%)~and(Status,eq,Closed)"
 
     dev_records = dev_nocodb.get_records(limit=2000, where=where_clause).get('list', [])
 
     if not dev_records:
-        print(f"No Developer records found for {engineer_manage_service} in {month_name}")
-        # Fallback to IoT records if no Developer records found
         return await _generate_iot_aktivitas_fallback(request, records, month_name)
-
-    print(f"Found {len(dev_records)} Developer records for {engineer_manage_service} in {month_name}")
 
     aktivitas_data = []
     for i, record in enumerate(dev_records, 1):
-        # Map Developer tasklist fields to template structure
         task_list = record.get('Task List', 'No Task Description')
         start_date = record.get('Start Date', '')
         end_date = record.get('End Date', '')
         requestor = record.get('Requestor', 'N/A')
 
-        # PIC is a list in Developer tasklist
         pic_list = record.get('PIC', [])
         engineer_manage = ', '.join(pic_list) if isinstance(pic_list, list) else str(pic_list or 'N/A')
 
-        # Calculate lead time if we have both dates
         lead_time = "N/A"
         if start_date and end_date:
             try:
                 from datetime import datetime
                 start = datetime.strptime(start_date, '%Y-%m-%d')
                 end = datetime.strptime(end_date, '%Y-%m-%d')
-                days = (end - start).days + 1  # +1 to include both start and end date
+                days = (end - start).days + 1
                 lead_time = f"{days} Hari" if days > 1 else "1 Hari"
             except ValueError:
                 lead_time = "N/A"
 
-        # Format dates for display
         formatted_start = start_date
         formatted_end = end_date
         if start_date:
@@ -863,8 +985,8 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
             "tanggal_request": formatted_start,
             "tanggal_penyelesaian": formatted_end,
             "lead_time": lead_time,
-            "requestor_pic": "Bagas Eko Prasetyo",  # Hardcoded PIC PAMA
-            "engineer_manage": engineer_manage  # This will be the PIC from Developer tasklist
+            "requestor_pic": "Bagas Eko Prasetyo",
+            "engineer_manage": engineer_manage
         })
 
     return templates.TemplateResponse('tasklistiotoperation/detail_aktivitas_pihak_kedua.html', {
@@ -875,32 +997,27 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
 
 async def _generate_iot_aktivitas_fallback(request: Request, records: list, month_name: str):
     """Fallback function using IoT records if Developer data not available"""
-
     aktivitas_data = []
     for i, record in enumerate(records, 1):
-        # Map NocoDB fields to template structure
         task_list = record.get('Task List', 'No Task Description')
         start_date = record.get('Start Date', '')
         end_date = record.get('End Date', '')
         requestor = record.get('Requestor', 'N/A')
 
-        # PIC is a list in NocoDB
         pic_list = record.get('PIC', [])
         pic_str = ', '.join(pic_list) if isinstance(pic_list, list) else str(pic_list or 'N/A')
 
-        # Calculate lead time if we have both dates
         lead_time = "N/A"
         if start_date and end_date:
             try:
                 from datetime import datetime
                 start = datetime.strptime(start_date, '%Y-%m-%d')
                 end = datetime.strptime(end_date, '%Y-%m-%d')
-                days = (end - start).days + 1  # +1 to include both start and end date
+                days = (end - start).days + 1
                 lead_time = f"{days} Hari" if days > 1 else "1 Hari"
             except ValueError:
                 lead_time = "N/A"
 
-        # Format dates for display
         formatted_start = start_date
         formatted_end = end_date
         if start_date:
@@ -920,7 +1037,7 @@ async def _generate_iot_aktivitas_fallback(request: Request, records: list, mont
             "tanggal_request": formatted_start,
             "tanggal_penyelesaian": formatted_end,
             "lead_time": lead_time,
-            "requestor_pic": "Bagas Eko Prasetyo",  # Hardcoded PIC PAMA
+            "requestor_pic": "Bagas Eko Prasetyo",
             "engineer_manage": pic_str
         })
 
@@ -932,7 +1049,6 @@ async def _generate_iot_aktivitas_fallback(request: Request, records: list, mont
 
 async def _generate_iot_respon_page(request: Request, records: list, month_name: str):
     """Generate response time page from NocoDB records"""
-
     respon_data = []
     for i, record in enumerate(records, 1):
         task_list = record.get('Task List', 'No Task Description')
@@ -940,17 +1056,13 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
         end_date = record.get('End Date', '')
         requestor = record.get('Requestor', 'N/A')
 
-        # PIC handling
         pic_list = record.get('PIC', [])
         engineer = ', '.join(pic_list) if isinstance(pic_list, list) else str(pic_list or 'N/A')
 
-        # For response time, we need to create some calculated fields
-        # Since we don't have specific response time fields in NocoDB, we'll use start/end dates
-        start_time = "08:00"  # Default time
-        end_time = "17:00"    # Default time
+        start_time = "08:00"
+        end_time = "17:00"
 
-        # Calculate response time in minutes (example calculation)
-        response_minutes = "30"  # Default response time
+        response_minutes = "30"
 
         respon_data.append({
             "no": i,
@@ -964,7 +1076,7 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
             "engineer": engineer,
             "waktu_respon_menit": response_minutes,
             "aktual_waktu_1": response_minutes,
-            "aktual_waktu_2": "180",  # Default values for now
+            "aktual_waktu_2": "180",
             "aktual_waktu_3": "60",
             "aktual_waktu_4": "240",
             "performance_respon_1": "95",
@@ -980,11 +1092,9 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
         "month": month_name
     })
 
-# Keep the old test endpoint for development
 @app.get("/tasklistiotoperation", response_class=HTMLResponse)
 async def tasklistiotoperation_test(request: Request, page: str = "problem"):
     """Test endpoint for IoT operation templates with dummy data"""
-
     if page == "problem":
         dummy_problem_data = [
             {
@@ -1077,7 +1187,6 @@ async def tasklistiotoperation_test(request: Request, page: str = "problem"):
         })
 
     else:
-        # Default ke problem
         return await tasklistiotoperation_test(request, "problem")
 
 @app.post("/report/evidence")
@@ -1093,12 +1202,9 @@ async def generate_evidence_report(
         type: "iotoperations" for IoT Operations tasklist or "developer" for Developer tasklist
         month: Month number (1-12) from form
     """
-
-    # Validate month
     if month < 1 or month > 12:
         raise HTTPException(400, "Invalid month")
 
-    # Indonesian months mapping
     indonesian_months = {
         1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
         5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
@@ -1107,7 +1213,6 @@ async def generate_evidence_report(
 
     month_name = indonesian_months[month]
 
-    # Determine which table to use
     if type == "iotoperations":
         table_key = "tasklist_iot"
     elif type == "developer":
@@ -1115,23 +1220,16 @@ async def generate_evidence_report(
     else:
         raise HTTPException(400, "Type must be 'iotoperations' or 'developer'")
 
-    # Get table configuration
     table_id = config.NOCODB_TABLES.get(table_key)
     if not table_id:
         raise HTTPException(500, f"Table configuration not found for {table_key}")
 
-    print(f"Generating evidence report for {type} - {month_name}")
-
-    # Initialize NocoDB processor
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
-    # Fetch records with month filter and non-null Evidence Task
     where_clause = f"(Month,eq,{month_name})~and(Evidence Task,notnull)"
     records = nocodb.get_records(limit=2000, where=where_clause).get('list', [])
 
     if not records:
-        print(f"No evidence records found for {type} in {month_name}")
-        # Return empty data structure if no records found
         return templates.TemplateResponse('evidence/evidence_aktivitas.html', {
             "request": request,
             "evidence_data": [],
@@ -1139,39 +1237,30 @@ async def generate_evidence_report(
             "month": month_name
         })
 
-    print(f"Found {len(records)} evidence records for {type} in {month_name}")
-
-    # Process records to extract evidence data
     evidence_data = []
     for i, record in enumerate(records, 1):
         task_list = record.get('Task List', 'No Task Description')
         evidence_task = record.get('Evidence Task', [])
 
-        # Process Evidence Task attachments
         image_urls = []
         if evidence_task and isinstance(evidence_task, list):
             for attachment in evidence_task:
                 if isinstance(attachment, dict):
-                    # NocoDB uses signedPath for file access
                     signed_path = attachment.get('signedPath')
                     if signed_path:
-                        # Construct full URL to NocoDB file
                         full_url = f"{config.NOCODB_BASE_URL.rstrip('/')}/{signed_path}"
                         image_urls.append(full_url)
 
-        # Use first image or skip if no images (since we filter by notnull)
         if image_urls:
             image_path = image_urls[0]
         else:
-            # Skip this record if no attachment found
-            print(f"Warning: Record has Evidence Task but no valid signedPath: {evidence_task}")
             continue
 
         evidence_data.append({
             "number": i,
             "title": task_list,
             "image_path": image_path,
-            "description": task_list  # Using task list as description as per requirement
+            "description": task_list
         })
 
     return templates.TemplateResponse('evidence/evidence_aktivitas.html', {
@@ -1181,11 +1270,9 @@ async def generate_evidence_report(
         "month": month_name
     })
 
-# Keep the test endpoint for development
 @app.get("/evidence", response_class=HTMLResponse)
 async def evidence_test(request: Request):
     """Test endpoint for evidence templates with dummy data"""
-
     dummy_evidence_data = [
         {
             "number": 1,
@@ -1237,8 +1324,6 @@ async def generate_all_report(
         type: "iotoperation" or "developer"
         month: Month number (1-12) from form
     """
-
-    # Validate inputs
     if month < 1 or month > 12:
         raise HTTPException(400, "Invalid month")
 
@@ -1247,42 +1332,28 @@ async def generate_all_report(
 
     current_year = datetime.now().year
 
-    print(f"Generating comprehensive {type} report for month {month}, year {current_year}")
-
     try:
-        # Collect all HTML sections
         html_sections = []
 
-        # 1. Get Timesheet HTML per employee
-        print("Getting timesheet HTML sections...")
         timesheet_htmls = await _get_timesheet_html_sections(month, current_year, type, request)
         html_sections.extend(timesheet_htmls)
 
-        # 2. Get Tasklist HTML
-        print("Getting tasklist HTML sections...")
         if type == "iotoperation":
-            # Get all IoT operation pages
             iot_htmls = await _get_iot_tasklist_html_sections(month, request)
             html_sections.extend(iot_htmls)
         else:
-            # Get all developer pages
             dev_htmls = await _get_developer_tasklist_html_sections(month, request)
             html_sections.extend(dev_htmls)
 
-        # 3. Get Evidence HTML
-        print("Getting evidence HTML section...")
         evidence_type_param = "iotoperations" if type == "iotoperation" else "developer"
         evidence_html = await _get_evidence_html_section(evidence_type_param, month, request)
         if evidence_html:
             html_sections.append(evidence_html)
 
-        # 4. Get Attendance HTML
-        print("Getting attendance HTML section...")
         attendance_html = await _get_attendance_html_section(month, current_year, type, request)
         if attendance_html:
             html_sections.append(attendance_html)
 
-        # Render the comprehensive template
         return templates.TemplateResponse('all_report_template.html', {
             "request": request,
             "type": type,
@@ -1295,17 +1366,13 @@ async def generate_all_report(
         })
 
     except Exception as e:
-        print(f"Error generating comprehensive report: {e}")
         raise HTTPException(500, f"Error generating comprehensive report: {str(e)}")
 
 async def _get_timesheet_html_sections(month: int, year: int, report_type: str, request: Request):
     """Get timesheet HTML for each employee separately, filtered by role"""
-
-    # Get employee list filtered by role
     employee_table = config.NOCODB_TABLES.get("employee_data")
     nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
 
-    # Determine role filter based on report type
     if report_type == "iotoperation":
         role_filter = "IoT Operations"
     elif report_type == "developer":
@@ -1318,13 +1385,10 @@ async def _get_timesheet_html_sections(month: int, year: int, report_type: str, 
     timesheet_htmls = []
 
     for name, info in employee_mapping.items():
-        # Create a mock request for each employee's timesheet
         try:
-            # Call the existing timesheet generation logic for single employee
             single_employee_data = await _generate_single_employee_timesheet(name, info, month, year)
 
             if single_employee_data and single_employee_data.get('timesheet_rows'):
-                # Create HTML section for this employee
                 html_content = await _render_single_timesheet_html(single_employee_data, request)
                 timesheet_htmls.append({
                     'type': 'timesheet',
@@ -1332,14 +1396,12 @@ async def _get_timesheet_html_sections(month: int, year: int, report_type: str, 
                     'content': html_content
                 })
         except Exception as e:
-            print(f"Error generating timesheet for {name}: {e}")
             continue
 
     return timesheet_htmls
 
 async def _generate_single_employee_timesheet(name: str, info: dict, month: int, year: int):
     """Generate timesheet data for single employee using existing logic"""
-
     timesheet_table = config.NOCODB_TABLES.get("timesheet")
     nocodb_timesheet = ClsNocoDBProcessor(config.APP_BASE_ID, timesheet_table)
 
@@ -1409,21 +1471,17 @@ async def _generate_single_employee_timesheet(name: str, info: dict, month: int,
 
 async def _render_single_timesheet_html(employee_data: dict, request: Request):
     """Render single employee timesheet using FastAPI templates (same approach as evidence)"""
-
     try:
-        # Use FastAPI templates like evidence does
         template = templates.get_template('timesheet_report_template.html')
         html_content = template.render({
-            "request": request,  # Add request object for static files access
-            "reports": [employee_data],  # Wrap in list since template expects reports list
+            "request": request,
+            "reports": [employee_data],
             "periode": employee_data['periode'],
             "logo_url": '/static/img/logo_pama.png'
         })
 
-        # Return raw HTML content - let browser handle it
         return html_content
     except Exception as e:
-        print(f"Error rendering timesheet template: {e}")
         return f"<div>Error rendering timesheet for {employee_data.get('nama', 'Unknown')}</div>"
 
 async def _get_iot_tasklist_html_sections(month: int, request: Request):
@@ -1443,7 +1501,6 @@ async def _get_iot_tasklist_html_sections(month: int, request: Request):
                 elif page == "respon":
                     title = "Detail Respon Resolution Time"
                 
-                # Extract body content only and add CSS isolation
                 body_content = re.search(r'<body[^>]*>(.*?)</body>', iot_html, re.DOTALL)
                 if body_content:
                     isolated_content = f'<div class="iot-tasklist-section">{body_content.group(1)}</div>'
@@ -1456,7 +1513,7 @@ async def _get_iot_tasklist_html_sections(month: int, request: Request):
                     'content': isolated_content
                 })
         except Exception as e:
-            print(f"Error getting IoT {page}: {e}")
+            pass
 
     return html_sections
 
@@ -1479,7 +1536,6 @@ async def _get_developer_tasklist_html_sections(month: int, request: Request):
                 elif page == "support":
                     title = "Detail Aktivitas Dukungan Support"
 
-                # Extract body content only and add CSS isolation
                 body_content = re.search(r'<body[^>]*>(.*?)</body>', dev_html, re.DOTALL)
                 if body_content:
                     isolated_content = f'<div class="dev-tasklist-section">{body_content.group(1)}</div>'
@@ -1492,7 +1548,7 @@ async def _get_developer_tasklist_html_sections(month: int, request: Request):
                     'content': isolated_content
                 })
         except Exception as e:
-            print(f"Error getting Developer {page}: {e}")
+            pass
 
     return html_sections
 
@@ -1616,7 +1672,6 @@ async def _get_evidence_html_section(evidence_type: str, month: int, request: Re
         "month": month_name
     })
 
-    # Extract body content only and add CSS isolation
     body_content = re.search(r'<body[^>]*>(.*?)</body>', html_content, re.DOTALL)
     if body_content:
         isolated_content = f'<div class="evidence-section">{body_content.group(1)}</div>'
@@ -1631,14 +1686,12 @@ async def _get_evidence_html_section(evidence_type: str, month: int, request: Re
 
 async def _get_attendance_html_section(month: int, year: int, report_type: str, request: Request):
     """Get attendance HTML section filtered by role"""
-
     employee_table = config.NOCODB_TABLES.get("employee_data")
     attendance_table = config.NOCODB_TABLES.get("attendance")
 
     nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
     nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
 
-    # Determine role filter based on report type
     if report_type == "iotoperation":
         role_filter = "IoT Operations"
     elif report_type == "developer":
@@ -1683,7 +1736,6 @@ async def _get_attendance_html_section(month: int, year: int, report_type: str, 
             'attendance_rows': attendance_data
         })
 
-    # Generate HTML content using FastAPI templates (same approach as evidence)
     if reports_data:
         try:
             indonesian_months = {
@@ -1692,17 +1744,15 @@ async def _get_attendance_html_section(month: int, year: int, report_type: str, 
                 9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
             }
 
-            # Use FastAPI templates like evidence does
             template = templates.get_template('attendance_report_template.html')
             html_content = template.render({
-                "request": request,  # Add request object for static files access
+                "request": request,
                 "periode": f"{start_date.strftime('%d %B %Y')} - {end_date.strftime('%d %B %Y')}",
                 "dicetak": datetime.now().strftime('%d %B %Y %H:%M:%S'),
                 "reports": reports_data,
                 "logo_url": '/static/img/logo_pama.png'
             })
 
-            # Return raw HTML content - let browser handle it
             clean_content = html_content
 
             return {
@@ -1711,7 +1761,7 @@ async def _get_attendance_html_section(month: int, year: int, report_type: str, 
                 'content': clean_content
             }
         except Exception as e:
-            print(f"Error rendering attendance template: {e}")
+            pass
 
     return {
         'type': 'attendance',
@@ -1731,7 +1781,6 @@ async def export_to_pdf_weasy(
     Simple PDF export - HTML sudah matang dengan page breaks yang benar
     """
     try:
-        # Import WeasyPrint
         try:
             from weasyprint import HTML, CSS
             from weasyprint.text.fonts import FontConfiguration
@@ -1742,11 +1791,9 @@ async def export_to_pdf_weasy(
         import uuid
         import io
 
-        # Create temp directory
         temp_dir = Path(tempfile.mkdtemp())
         export_id = str(uuid.uuid4())[:8]
 
-        # Clean HTML - remove interactive elements only
         clean_html = html_content
         clean_html = re.sub(r'<button[^>]*export-btn[^>]*>.*?</button>', '', clean_html, flags=re.DOTALL)
         clean_html = re.sub(r'<div[^>]*id="exportModal"[^>]*>.*?</div>', '', clean_html, flags=re.DOTALL)
@@ -1754,52 +1801,38 @@ async def export_to_pdf_weasy(
         clean_html = re.sub(r'onclick="[^"]*"', '', clean_html)
         clean_html = clean_html.replace('src="/static/', f'src="http://localhost:8000/static/')
 
-        # Simple PDF CSS - trust the existing page breaks in template
         pdf_css = """
         <style>
         @media print {
             body { margin: 0; background: white; }
-
-            /* Trust existing page breaks in template */
             .page-break { page-break-before: always !important; }
             .timesheet-employee { page-break-before: always !important; }
             .timesheet-employee:first-child { page-break-before: auto !important; }
-
-            /* Timesheet specific - landscape for wide tables */
             .timesheet-employee {
                 page-break-inside: avoid !important;
             }
-
-            /* Hide interactive elements */
             .export-btn, #exportModal { display: none !important; }
-
-            /* Color printing */
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
         </style>
         """
 
-        # Insert PDF CSS
         clean_html = clean_html.replace('</head>', pdf_css + '</head>')
 
-        # Save HTML
         html_file = temp_dir / f"report_{export_id}.html"
         with open(html_file, 'w', encoding='utf-8') as f:
             f.write(clean_html)
 
-        # Generate PDF
         font_config = FontConfiguration()
         html_doc = HTML(filename=str(html_file))
         pdf_bytes = html_doc.write_pdf(font_config=font_config, optimize_images=True)
 
-        # Handle Berita Acara merging if provided
         if berita_acara and berita_acara.filename:
             try:
                 from PyPDF2 import PdfReader, PdfWriter
 
                 berita_content = await berita_acara.read()
 
-                # Convert image to PDF if needed
                 if berita_acara.filename.lower().endswith(('.jpg', '.jpeg', '.png')):
                     try:
                         import img2pdf
@@ -1809,29 +1842,24 @@ async def export_to_pdf_weasy(
                 else:
                     berita_pdf_bytes = berita_content
 
-                # Merge PDFs
                 berita_reader = PdfReader(io.BytesIO(berita_pdf_bytes))
                 report_reader = PdfReader(io.BytesIO(pdf_bytes))
 
                 writer = PdfWriter()
 
-                # Add berita acara first
                 for page in berita_reader.pages:
                     writer.add_page(page)
 
-                # Add report pages
                 for page in report_reader.pages:
                     writer.add_page(page)
 
-                # Write merged PDF
                 merged_pdf = io.BytesIO()
                 writer.write(merged_pdf)
                 pdf_bytes = merged_pdf.getvalue()
 
             except Exception as e:
-                print(f"PDF merging failed: {e}, returning report only")
+                pass
 
-        # Clean up
         try:
             import shutil
             shutil.rmtree(temp_dir)
@@ -1847,7 +1875,6 @@ async def export_to_pdf_weasy(
         )
 
     except Exception as e:
-        print(f"PDF export error: {e}")
         raise HTTPException(500, f"PDF export failed: {str(e)}")
 
 @app.get("/health")
