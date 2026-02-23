@@ -96,3 +96,4 @@ services:
 networks:
   digital-bast-network:
     external: true
+
