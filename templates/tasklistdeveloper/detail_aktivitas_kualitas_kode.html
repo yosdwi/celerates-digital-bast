@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detail Aktivitas Kualitas Kode</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background-color: white;
+        }
+        .header {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .table-container {
+            border: 2px solid #000;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        th {
+            background-color: #9BB5D6;
+            color: #000;
+            font-weight: bold;
+            padding: 10px 8px;
+            text-align: center;
+            border: 1px solid #000;
+            vertical-align: middle;
+        }
+        td {
+            padding: 8px;
+            border: 1px solid #000;
+            text-align: left;
+            vertical-align: middle;
+        }
+        td.center {
+            text-align: center;
+        }
+        td.no-col {
+            width: 5%;
+            text-align: center;
+        }
+        td.task-col {
+            width: 25%;
+        }
+        td.requestor-col {
+            width: 15%;
+        }
+        td.pic-col {
+            width: 15%;
+        }
+        td.status-col {
+            width: 10%;
+        }
+        td.date-col {
+            width: 10%;
+        }
+        td.pencapaian-col {
+            width: 10%;
+        }
+        .summary-row {
+            background-color: #9BB5D6;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <!-- <div class="header">2. Detail Aktivitas Kualitas Kode</div> -->
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th rowspan="2">No</th>
+                    <th rowspan="2">Task List</th>
+                    <th rowspan="2">Requestor</th>
+                    <th rowspan="2">PIC</th>
+                    <th rowspan="2">Status</th>
+                    <th rowspan="2">Start Date</th>
+                    <th rowspan="2">End Date</th>
+                    <th rowspan="2">Pencapaian (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in kualitas_kode_data %}
+                <tr>
+                    <td class="no-col">{{ item.no }}</td>
+                    <td class="task-col">{{ item.task_list }}</td>
+                    <td class="requestor-col">{{ item.requestor }}</td>
+                    <td class="pic-col">{{ item.pic }}</td>
+                    <td class="status-col center">{{ item.status }}</td>
+                    <td class="date-col center">{{ item.start_date }}</td>
+                    <td class="date-col center">{{ item.end_date }}</td>
+                    <td class="pencapaian-col center">{{ item.pencapaian }}%</td>
+                </tr>
+                {% endfor %}
+                <tr class="summary-row">
+                    <td colspan="7" class="center">Pencapaian Aktivitas Kualitas Kode (%)</td>
+                    <td class="center">{{ summary_pencapaian }}%</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

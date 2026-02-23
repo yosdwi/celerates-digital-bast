@@ -1,0 +1,6 @@
+pandas
+pyodbc
+requests
+python-dotenv
+holidays
+schedule

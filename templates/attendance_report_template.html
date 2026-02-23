@@ -29,23 +29,22 @@
             margin-bottom: 20px;
         }
         .header .logo-container {
-            border: 2px solid #000;
-            padding: 5px;
-            width: 110px;
+            width: 50px;
             height: auto;
             display: flex;
             align-items: center;
             justify-content: center;
         }
         .header .logo-container img {
-            width: 100px;
+            width: 45px;
+            height: auto;
         }
         .header .company-info {
             text-align: center;
             flex-grow: 1;
         }
-        .header h1 { margin: 0; font-size: 16px; }
-        .header p { margin: 0; }
+        .header h1 { margin: 0; font-size: 16px; font-weight: bold; }
+        .header p { margin: 0; font-weight: bold; }
         .employee-info { margin-bottom: 20px; }
         .employee-info table { width: 450px; border-collapse: collapse; }
         .employee-info td { padding: 2px 5px; }
@@ -127,7 +126,7 @@
                         <td style="text-align: center;">{{ row.tanggal_kehadiran }}</td>
                         <td style="text-align: center;">
                             {% for time, status in row.jam_kehadiran %}
-                                <span class="time-{{ status }}">{{ time }} ({{ status.upper() }})</span>{% if not loop.last %}, {% endif %}
+                                {{ time }} <span class="time-{{ status }}">({{ status.upper() }})</span>{% if not loop.last %}, {% endif %}
                             {% endfor %}
                         </td>
                     </tr>

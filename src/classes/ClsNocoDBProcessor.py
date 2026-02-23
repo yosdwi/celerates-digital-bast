@@ -8,7 +8,7 @@ from src import config
 
 class ClsNocoDBProcessor:
     def __init__(self, base_id: str, table_id: str):
-        self.base_url = config.NOCODB_BASE_URL
+        self.base_url = config.NOCODB_BASE_URL.rstrip('/')
         self.api_token = config.NOCODB_API_TOKEN
         self.base_id = base_id
         self.table_id = table_id
@@ -240,13 +240,18 @@ class ClsNocoDBProcessor:
             records_to_update[unique_key] = record
 
         unique_keys = list(records_to_update.keys())
-        where_clause = f"(Unique Key,in,{','.join(unique_keys)})"
-        existing_records_response = self.get_records(limit=len(unique_keys), where=where_clause)
-
         existing_keys = {}
-        if existing_records_response and existing_records_response.get('list'):
-            for record in existing_records_response['list']:
-                existing_keys[record['Unique Key']] = record['Id']
+
+        # Process unique keys in batches to avoid 414 Request-URI Too Large
+        batch_size = 100  # Reduce batch size for unique key queries
+        for i in range(0, len(unique_keys), batch_size):
+            batch_keys = unique_keys[i:i + batch_size]
+            where_clause = f"(Unique Key,in,{','.join(batch_keys)})"
+            existing_records_response = self.get_records(limit=len(batch_keys), where=where_clause)
+
+            if existing_records_response and existing_records_response.get('list'):
+                for record in existing_records_response['list']:
+                    existing_keys[record['Unique Key']] = record['Id']
 
         records_to_create_data = []
         updates_to_process = []

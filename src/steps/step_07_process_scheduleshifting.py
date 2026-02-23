@@ -1,25 +1,20 @@
 from src import config
 from src.classes.ClsNocoDBProcessor import ClsNocoDBProcessor
-from src.classes.ClsScheduleShiftingProcessor import ClsScheduleShiftingProcessor
+from src.utils.date_helper import get_configured_month_dates, get_month_name_from_date
 import pandas as pd
 
 def run():
-    print("Executing Step 7: Process Schedule Shifting")
+    print("Executing Step 7: Generate Monthly Schedule Shifting Data")
 
     schedule_shifting_table_id = config.NOCODB_TABLES.get("schedule_shifting")
     if not schedule_shifting_table_id:
         raise ValueError("Configuration for schedule shifting table ID is missing.")
-
-    schedule_shifting_sheet_url = config.SCHEDULE_SHIFTING_URL
-    if not schedule_shifting_sheet_url:
-        raise ValueError("Configuration for schedule shifting sheet URL is missing.")
 
     employee_table_id = config.NOCODB_TABLES.get("employee_data")
     if not employee_table_id:
         raise ValueError("Configuration for employee table ID is missing.")
 
     try:
-        # Initialize processors
         nocodb_processor = ClsNocoDBProcessor(
             base_id=config.APP_BASE_ID,
             table_id=schedule_shifting_table_id
@@ -28,54 +23,42 @@ def run():
             base_id=config.APP_BASE_ID,
             table_id=employee_table_id
         )
-        gsheet_processor = ClsScheduleShiftingProcessor()
 
-        # Get employee mapping, filtering for IoT Operations role
         employee_mapping = employee_processor.get_all_employees(role_filter="IoT Operations")
 
-        # Read data from Google Sheet
-        df = gsheet_processor.read_sheet_to_dataframe(schedule_shifting_sheet_url, "Schedule Shifting Apps")
-
-        if df.empty:
-            print("No data found in the schedule shifting sheet.")
+        if not employee_mapping:
+            print("No employees found with IoT Operations role.")
             return
 
-        # Process each row
-        for index, row in df.iterrows():
-            schedule_data = row.to_dict()
-            
-            employee_name = schedule_data.get("Employee Name")
-            if not employee_name:
-                continue
-            
-            employee_info = employee_mapping.get(employee_name.strip().title())
+        # Get configured month dates
+        start_date, end_date, target_date = get_configured_month_dates()
+        month_name = get_month_name_from_date(target_date)
 
-            if not employee_info:
-                print(f"Employee not found or not in IoT Operations: {employee_name}")
-                continue
+        print(f"Generating schedule shifting data for {month_name} {target_date.year}")
+        print(f"Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        print(f"Found {len(employee_mapping)} employees in IoT Operations")
 
-            date_str = schedule_data.get("Date")
-            try:
-                formatted_date = pd.to_datetime(date_str).strftime('%Y-%m-%d')
-            except (ValueError, TypeError):
-                print(f"Skipping row due to invalid date: {date_str}")
-                continue
-            
-            start_time = schedule_data.get("Start Time")
-            end_time = schedule_data.get("End Time")
-            shift_code = schedule_data.get("Shift Code")
+        records_created = 0
+        records_skipped = 0
 
-            transformed_data = {
-                "Date": formatted_date,
-                "Employee Data Table": [employee_info["id"]],
-                "Start Time": start_time if start_time and start_time.strip() != '-' else None,
-                "End Time": end_time if end_time and end_time.strip() != '-' else None,
-                "Shift Code": shift_code if shift_code and shift_code.strip() != '-' else None,
-                "Work Type": schedule_data.get("Work Type")
-            }
-            nocodb_processor.upsert_schedule_shifting(transformed_data)
+        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
 
-        print("Step 7: Completed.")
+        for date in date_range:
+            formatted_date = date.strftime('%Y-%m-%d')
+
+            for employee_name, employee_info in employee_mapping.items():
+                transformed_data = {
+                    "Date": formatted_date,
+                    "Employee Data Table": [employee_info["id"]]
+                }
+
+                result = nocodb_processor.upsert_schedule_shifting(transformed_data)
+                if result:
+                    records_created += 1
+                else:
+                    records_skipped += 1
+
+        print(f"Step 7: Completed. Created/Updated: {records_created}, Skipped: {records_skipped}")
     except Exception as e:
         print(f"Step 7: Failed with error: {e}")
         raise

@@ -35,5 +35,4 @@ RUN pip install --no-cache /wheels/*
 COPY static ./static
 COPY . .
 
-EXPOSE 5000
-CMD ["python", "web_server.py"]
+EXPOSE 8000

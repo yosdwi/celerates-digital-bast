@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evidence Aktivitas</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background-color: white;
+            line-height: 1.6;
+        }
+        .header {
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 40px;
+        }
+        .evidence-item {
+            margin-bottom: 50px;
+            page-break-inside: avoid;
+        }
+        .evidence-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            line-height: 1.4;
+        }
+        .evidence-image {
+            width: 100%;
+            max-width: 600px;
+            height: auto;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .evidence-description {
+            font-size: 12px;
+            color: #666;
+            margin-top: 10px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <!-- <div class="header">Evidence Aktivitas</div> -->
+
+    {% for item in evidence_data %}
+    <div class="evidence-item">
+        <div class="evidence-title">{{ item.number }}. {{ item.title }}</div>
+        {% if item.image_path %}
+        <img src="{{ item.image_path }}" alt="{{ item.title }}" class="evidence-image" />
+        {% endif %}
+        {% if item.description %}
+        <div class="evidence-description">{{ item.description }}</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</body>
+</html>

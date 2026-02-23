@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- <title>Detail Aktivitas Dukungan Support</title> -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background-color: white;
+        }
+        .header {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .table-container {
+            border: 2px solid #000;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        th {
+            background-color: #9BB5D6;
+            color: #000;
+            font-weight: bold;
+            padding: 10px 8px;
+            text-align: center;
+            border: 1px solid #000;
+            vertical-align: middle;
+        }
+        td {
+            padding: 8px;
+            border: 1px solid #000;
+            text-align: left;
+            vertical-align: middle;
+        }
+        td.center {
+            text-align: center;
+        }
+        td.no-col {
+            width: 5%;
+            text-align: center;
+        }
+        td.task-col {
+            width: 30%;
+        }
+        td.requestor-col {
+            width: 15%;
+        }
+        td.pic-col {
+            width: 15%;
+        }
+        td.status-col {
+            width: 10%;
+        }
+        td.date-col {
+            width: 10%;
+        }
+        td.pencapaian-col {
+            width: 15%;
+        }
+        .summary-row {
+            background-color: #9BB5D6;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <!-- <div class="header">4. Detail Aktivitas Dukungan Support</div> -->
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>No</th>
+                    <th>Task List</th>
+                    <th>Requestor</th>
+                    <th>PIC</th>
+                    <th>Status</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
+                    <th>Pencapaian (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in dukungan_support_data %}
+                <tr>
+                    <td class="no-col">{{ item.no }}</td>
+                    <td class="task-col">{{ item.task_list }}</td>
+                    <td class="requestor-col">{{ item.requestor }}</td>
+                    <td class="pic-col">{{ item.pic }}</td>
+                    <td class="status-col center">{{ item.status }}</td>
+                    <td class="date-col center">{{ item.start_date }}</td>
+                    <td class="date-col center">{{ item.end_date }}</td>
+                    <td class="pencapaian-col center">{{ item.pencapaian }}%</td>
+                </tr>
+                {% endfor %}
+                <tr class="summary-row">
+                    <td colspan="7" class="center">Pencapaian Aktivitas Waktu Rilis Fitur (%)</td>
+                    <td class="center">{{ summary_pencapaian }}%</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

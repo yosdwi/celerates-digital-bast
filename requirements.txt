@@ -12,3 +12,7 @@ resend
 psycopg2-binary
 Jinja2
 Flask
+fastapi
+uvicorn[standard]
+httpx
+python-multipart

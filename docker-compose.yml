@@ -18,9 +18,9 @@ services:
     image: yosdwi/digital-bast:latest
     container_name: digital-bast-web
     env_file: .env
-    command: ["python", "web_server.py"]
+    command: ["python", "fastapi_server.py"]
     expose:
-      - "5000"
+      - "8000"
     networks:
       - digital-bast-network
 
@@ -56,15 +56,15 @@ services:
       ofelia.job-exec.step_04_generate_timesheets.container: "digital-bast-app"
       ofelia.job-exec.step_04_generate_timesheets.command: "python main.py --step step_04_generate_timesheets"
 
-      ofelia.job-exec.step_05_sync_timesheet_to_gsheet.schedule: "15 */4 * * *" # Runs every 4 hours at minute 15
-      ofelia.job-exec.step_05_sync_timesheet_to_gsheet.container: "digital-bast-app"
-      ofelia.job-exec.step_05_sync_timesheet_to_gsheet.command: "python main.py --step step_05_sync_timesheet_to_gsheet"
+      # ofelia.job-exec.step_05_sync_timesheet_to_gsheet.schedule: "15 */4 * * *" # Runs every 4 hours at minute 15
+      # ofelia.job-exec.step_05_sync_timesheet_to_gsheet.container: "digital-bast-app"
+      # ofelia.job-exec.step_05_sync_timesheet_to_gsheet.command: "python main.py --step step_05_sync_timesheet_to_gsheet"
 
       ofelia.job-exec.step_06_sync_attendance_to_gsheet.schedule: "30 */4 * * *" # Runs every 4 hours at minute 30
       ofelia.job-exec.step_06_sync_attendance_to_gsheet.container: "digital-bast-app"
       ofelia.job-exec.step_06_sync_attendance_to_gsheet.command: "python main.py --step step_06_sync_attendance_to_gsheet"
 
-      ofelia.job-exec.step_07_process_scheduleshifting.schedule: "45 */3 * * *" # Runs every 3 hours at minute 45
+      ofelia.job-exec.step_07_process_scheduleshifting.schedule: "0 2 * * *" # Runs daily at 02:00
       ofelia.job-exec.step_07_process_scheduleshifting.container: "digital-bast-app"
       ofelia.job-exec.step_07_process_scheduleshifting.command: "python main.py --step step_07_process_scheduleshifting"
 
@@ -72,13 +72,13 @@ services:
       ofelia.job-exec.step_08_send_comment_notifications.container: "digital-bast-app"
       ofelia.job-exec.step_08_send_comment_notifications.command: "python main.py --step step_08_send_comment_notifications"
 
-      ofelia.job-exec.step_09_send_update_notifications.schedule: "0 */2 * * *" # Runs every 2 hours at minute 0
-      ofelia.job-exec.step_09_send_update_notifications.container: "digital-bast-app"
-      ofelia.job-exec.step_09_send_update_notifications.command: "python main.py --step step_09_send_update_notifications"
+      # ofelia.job-exec.step_09_send_update_notifications.schedule: "0 */2 * * *" # Runs every 2 hours at minute 0
+      # ofelia.job-exec.step_09_send_update_notifications.container: "digital-bast-app"
+      # ofelia.job-exec.step_09_send_update_notifications.command: "python main.py --step step_09_send_update_notifications"
 
-      ofelia.job-exec.step_10_archive_timesheet.schedule: "5 1 * * *" # Runs daily at 01:05
-      ofelia.job-exec.step_10_archive_timesheet.container: "digital-bast-app"
-      ofelia.job-exec.step_10_archive_timesheet.command: "python main.py --step step_10_archive_timesheet"
+      # ofelia.job-exec.step_10_archive_timesheet.schedule: "5 1 * * *" # Runs daily at 01:05
+      # ofelia.job-exec.step_10_archive_timesheet.container: "digital-bast-app"
+      # ofelia.job-exec.step_10_archive_timesheet.command: "python main.py --step step_10_archive_timesheet"
 
   scheduler:
     image: mcuadros/ofelia:latest
@@ -89,6 +89,9 @@ services:
     restart: always
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+
+# volumes:
+  # tinyauth_data:
 
 networks:
   digital-bast-network:

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- <title>Detail Problem yang ditangani oleh Pihak Kedua</title> -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background-color: white;
+        }
+        .header {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .formula-header {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            margin-top: 30px;
+        }
+        .table-container {
+            border: 2px solid #000;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        th {
+            background-color: #9BB5D6;
+            color: #000;
+            font-weight: bold;
+            padding: 12px 10px;
+            text-align: center;
+            border: 1px solid #000;
+            vertical-align: middle;
+        }
+        td {
+            padding: 10px;
+            border: 1px solid #000;
+            text-align: left;
+            vertical-align: middle;
+        }
+        .object-col {
+            width: 30%;
+            background-color: white;
+        }
+        .formula-col {
+            width: 35%;
+            background-color: white;
+        }
+        .keterangan-col {
+            width: 35%;
+            background-color: white;
+        }
+        .keterangan-text {
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        .keterangan-text ul {
+            margin: 5px 0;
+            padding-left: 20px;
+        }
+        .keterangan-text li {
+            margin: 3px 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- <div class="header">1. Detail problem yang ditangani oleh Pihak Kedua:</div> -->
+
+    <div class="formula-header">Formula</div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Object</th>
+                    <th>Formula</th>
+                    <th>Keterangan</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in problem_data %}
+                <tr>
+                    <td class="object-col">{{ item.object }}</td>
+                    <td class="formula-col">{{ item.formula }}</td>
+                    <td class="keterangan-col">
+                        <div class="keterangan-text">
+                            {% if item.keterangan is string %}
+                                {{ item.keterangan }}
+                            {% else %}
+                                <ul>
+                                    {% for keterangan in item.keterangan %}
+                                    <li>{{ keterangan }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

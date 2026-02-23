@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- <title>Detail Aktivitas lainnya yang dilakukan oleh Pihak Kedua</title> -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background-color: white;
+        }
+        .header {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .table-container {
+            border: 2px solid #000;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        th {
+            background-color: #9BB5D6;
+            color: #000;
+            font-weight: bold;
+            padding: 10px 8px;
+            text-align: center;
+            border: 1px solid #000;
+            vertical-align: middle;
+        }
+        td {
+            padding: 8px;
+            border: 1px solid #000;
+            text-align: center;
+            vertical-align: middle;
+        }
+        td.left-align {
+            text-align: left;
+        }
+        .no-col {
+            width: 8%;
+        }
+        .aktivitas-col {
+            width: 25%;
+        }
+        .tanggal-col {
+            width: 15%;
+        }
+        .leadtime-col {
+            width: 12%;
+        }
+        .requestor-col {
+            width: 15%;
+        }
+        .engineer-col {
+            width: 25%;
+        }
+    </style>
+</head>
+<body>
+    <!-- <div class="header">2. Detail Aktivitas lainnya yang dilakukan oleh Pihak Kedua:</div> -->
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th class="no-col">No</th>
+                    <th class="aktivitas-col">Detail Aktivitas</th>
+                    <th class="tanggal-col">Tanggal Request</th>
+                    <th class="tanggal-col">Tanggal Waktu Penyelesaian</th>
+                    <th class="leadtime-col">Lead Time Waktu Penyelesaian</th>
+                    <th class="requestor-col">Requestor PIC PAMA</th>
+                    <th class="engineer-col">Engineer Manage Service</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in aktivitas_data %}
+                <tr>
+                    <td class="no-col">{{ item.no }}</td>
+                    <td class="aktivitas-col left-align">{{ item.detail_aktivitas }}</td>
+                    <td class="tanggal-col">{{ item.tanggal_request }}</td>
+                    <td class="tanggal-col">{{ item.tanggal_penyelesaian }}</td>
+                    <td class="leadtime-col">{{ item.lead_time }}</td>
+                    <td class="requestor-col">{{ item.requestor_pic }}</td>
+                    <td class="engineer-col">{{ item.engineer_manage }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
