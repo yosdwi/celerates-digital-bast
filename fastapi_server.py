@@ -20,7 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from src import config
 from src.classes.ClsNocoDBProcessor import ClsNocoDBProcessor
 
-app = FastAPI(title="Digital BAST Admin", version="1.0.0", root_path="/admin")
+app = FastAPI(title="Digital BAST Admin", version="1.0.0")
 
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", secrets.token_urlsafe(32)))
 
@@ -277,7 +277,7 @@ async def login(request: Request, error: str = None):
     """Serves the login page."""
     user = get_current_user(request)
     if user:
-        return RedirectResponse(url="/", status_code=302)
+        return RedirectResponse(url="/admin/", status_code=302)
 
     return templates.TemplateResponse('login.html', {
         "request": request,
@@ -304,14 +304,14 @@ async def auth_login(request: Request, email: str = Form(...), password: str = F
 async def auth_logout(request: Request):
     """Handle user logout"""
     logout_user(request)
-    return RedirectResponse(url="/login", status_code=302)
+    return RedirectResponse(url="/admin/login", status_code=302)
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Serves the main page with the report generation form (protected route)."""
     user = get_current_user(request)
     if not user:
-        return RedirectResponse(url=request.url_for('login'), status_code=302)
+        return RedirectResponse(url="/admin/login", status_code=302)
     return templates.TemplateResponse('index.html', {
         "request": request,
         "user": user
