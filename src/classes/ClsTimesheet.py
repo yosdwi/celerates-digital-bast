@@ -90,7 +90,14 @@ class ClsTimesheet:
                 
                 attendance_record = attendance_lookup.get(lookup_key_attendance, {})
                 tasks = tasklist_lookup.get(lookup_key_tasks, [])
-                
+
+                # Check if attendance was manually edited
+                is_manual_edit = False
+                if attendance_record:
+                    last_modified = attendance_record.get('Last Modified')
+                    if last_modified and '@system.com' not in str(last_modified):
+                        is_manual_edit = True
+
                 record = {
                     "Date": date_str,
                     "Calendar Month": month_str,
@@ -99,6 +106,7 @@ class ClsTimesheet:
                     "Holiday": holiday_val,
                     "Remarks": remarks_val,
                     "TTD": "",
+                    "IsManualEdit": is_manual_edit,
                     # Linking data for post-processing
                     "_employee_id": employee_id,
                     "_attendance_id": self._get_record_link(attendance_record),

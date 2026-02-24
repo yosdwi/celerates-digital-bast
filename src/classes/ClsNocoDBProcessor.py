@@ -248,7 +248,11 @@ class ClsNocoDBProcessor:
             date = clean_record["Date"]
             unique_key = self.generate_unique_key(date, str(employee_id))
             clean_record["Unique Key"] = unique_key
-            records_to_update[unique_key] = record  # Keep original with metadata
+
+            # Store record with Unique Key included
+            record_with_uk = record.copy()
+            record_with_uk["Unique Key"] = unique_key
+            records_to_update[unique_key] = record_with_uk
 
         unique_keys = list(records_to_update.keys())
         existing_keys = {}
@@ -270,6 +274,9 @@ class ClsNocoDBProcessor:
         # Separate records for update vs create
         for unique_key, record_data in records_to_update.items():
             clean_record = {k: v for k, v in record_data.items() if not k.startswith('_')}
+            # Ensure Unique Key is always included
+            clean_record["Unique Key"] = unique_key
+
             if unique_key in existing_keys:
                 record_id = existing_keys[unique_key]
                 updates_to_process.append((record_id, record_data))
@@ -289,6 +296,9 @@ class ClsNocoDBProcessor:
 
                 for record_id, record_data in batch:
                     clean_record = {k: v for k, v in record_data.items() if not k.startswith('_')}
+                    # Ensure Unique Key is preserved in updates
+                    if "Unique Key" in record_data:
+                        clean_record["Unique Key"] = record_data["Unique Key"]
                     if self.update_record(record_id, clean_record):
                         # Create links after successful update
                         self._create_timesheet_links(record_id, record_data)
