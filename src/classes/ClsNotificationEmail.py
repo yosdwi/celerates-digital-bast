@@ -15,11 +15,11 @@ class ClsNotificationEmail:
         with open(config.QUERIES_PATH / "get_pending_comment_notifications.sql") as f:
             self.comment_details_query = text(f.read())
 
-        comment_template_path = Path(__file__).parent.parent / "templates" / "comment_notification.html"
+        comment_template_path = Path(__file__).parent.parent.parent / "templates" / "comment_notification.html"
         with open(comment_template_path, 'r', encoding='utf-8') as f:
             self.comment_template = f.read()
 
-        update_template_path = Path(__file__).parent.parent / "templates" / "update_notification.html"
+        update_template_path = Path(__file__).parent.parent.parent / "templates" / "update_notification.html"
         with open(update_template_path, 'r', encoding='utf-8') as f:
             self.update_template = f.read()
 

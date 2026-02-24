@@ -311,7 +311,7 @@ async def index(request: Request):
     """Serves the main page with the report generation form (protected route)."""
     user = get_current_user(request)
     if not user:
-        return RedirectResponse(url="/login", status_code=302)
+        return RedirectResponse(url=request.url_for('login'), status_code=302)
     return templates.TemplateResponse('index.html', {
         "request": request,
         "user": user
