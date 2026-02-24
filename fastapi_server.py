@@ -1363,8 +1363,8 @@ async def generate_all_report(
             "month": month,
             "year": current_year,
             "html_sections": html_sections,
-            "logo_pama_url": '/static/img/logo_pama.png',
-            "logo_celerates_url": '/static/img/logo_celerates.jpg',
+            "logo_pama_url": '/admin/static/img/logo_pama.png',
+            "logo_celerates_url": '/admin/admin/static/img/logo_celerates.jpg',
             "datetime": datetime
         })
 
