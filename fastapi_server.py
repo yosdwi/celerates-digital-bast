@@ -298,7 +298,7 @@ async def auth_login(request: Request, email: str = Form(...), password: str = F
     session_id = create_user_session(user)
     request.session['session_id'] = session_id
 
-    return RedirectResponse(url="/", status_code=302)
+    return RedirectResponse(url="/admin/", status_code=302)
 
 @app.get("/auth/logout")
 async def auth_logout(request: Request):
