@@ -19,3 +19,4 @@ bcrypt
 weasyprint
 PyPDF2
 img2pdf
+itsdangerous
