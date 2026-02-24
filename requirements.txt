@@ -11,8 +11,11 @@ sqlalchemy
 resend
 psycopg2-binary
 Jinja2
-Flask
 fastapi
 uvicorn[standard]
 httpx
 python-multipart
+bcrypt
+weasyprint
+PyPDF2
+img2pdf
