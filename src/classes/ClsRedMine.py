@@ -43,6 +43,7 @@ class ClsRedMine:
             self.is_connected = False
 
     def get_tasks_data(self, start_date: str, end_date: str) -> List[Dict]:
+        cursor = None
         try:
             cursor = self.connection.cursor()
             params = (start_date, end_date, start_date, end_date)
@@ -58,11 +59,13 @@ class ClsRedMine:
 
     def format_tasks_for_nocodb(self, tasks_data: List[Dict], employee_mapping: dict) -> List[Dict]:
         formatted_data = []
-        # --- START DIAGNOSTIC ---
-        available_nrps = {emp_data.get('nrp') for emp_name, emp_data in employee_mapping.items() if emp_data.get('nrp')}
-        print(f"DEBUG: Available NRPs from NocoDB to match against: {available_nrps}")
-        print(f"DEBUG: NRPs from Redmine tasks being processed: {[task.get('nrp') for task in tasks_data]}")
-        # --- END DIAGNOSTIC ---
+
+        # Create NRP to employee_id mapping for O(1) lookup
+        nrp_to_id = {}
+        for emp_name, emp_data in employee_mapping.items():
+            if emp_data.get('nrp'):
+                nrp_to_id[emp_data['nrp']] = emp_data['id']
+
         for task in tasks_data:
             start_date_str = None
             if task.get('start_date'):
@@ -76,24 +79,27 @@ class ClsRedMine:
 
             employee_data_id = None
             task_nrp = task.get('nrp')
-            if employee_mapping and task_nrp:
-                for emp_name, emp_data in employee_mapping.items():
-                    if emp_data.get('nrp') == task_nrp:
-                        employee_data_id = [emp_data['id']]
-                        break
-            
-            formatted_record = {
-                'Task List': task.get('isu_subject', ''),
-                'Requestor': task.get('author_name', ''),
-                'Employee Data': employee_data_id,
-                'Status': task.get('status_desc', ''),
-                'Start Date': start_date_str,
-                'End Date': end_date_str,
-                'Pencapaian': task.get('done_ratio', 0),
-                'Tracker Name': task.get('tracker_name', ''),
-                'NRP': task_nrp
-            }
-            formatted_data.append(formatted_record)
+
+            # Only process tasks with valid NRP mapping
+            if task_nrp and task_nrp in nrp_to_id:
+                employee_data_id = [nrp_to_id[task_nrp]]
+
+                formatted_record = {
+                    'Task List': task.get('isu_subject', ''),
+                    'Requestor': task.get('author_name', ''),
+                    'Employee Data': employee_data_id,
+                    'Status': task.get('status_desc', ''),
+                    'Start Date': start_date_str,
+                    'End Date': end_date_str,
+                    'Pencapaian': task.get('done_ratio', 0),
+                    'Tracker Name': task.get('tracker_name', ''),
+                    'NRP': task_nrp
+                }
+                formatted_data.append(formatted_record)
+            else:
+                # Skip tasks with no NRP or NRP not in employee mapping
+                skipped_reason = "No NRP" if not task_nrp else f"NRP '{task_nrp}' not in Developer mapping"
+                print(f"DEBUG: Skipping task - {skipped_reason}: {task.get('isu_subject', '')[:50]}")
         return formatted_data
 
     def get_formatted_tasks_summary(self, start_date: str, end_date: str, employee_mapping: dict) -> pd.DataFrame:

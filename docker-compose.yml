@@ -5,7 +5,7 @@ services:
     image: nginx:alpine
     container_name: digital-bast-nginx
     ports:
-      - "8081:80"
+      - "8082:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf
     depends_on:
@@ -60,9 +60,9 @@ services:
       # ofelia.job-exec.step_05_sync_timesheet_to_gsheet.container: "digital-bast-app"
       # ofelia.job-exec.step_05_sync_timesheet_to_gsheet.command: "python main.py --step step_05_sync_timesheet_to_gsheet"
 
-      ofelia.job-exec.step_06_sync_attendance_to_gsheet.schedule: "30 */4 * * *" # Runs every 4 hours at minute 30
-      ofelia.job-exec.step_06_sync_attendance_to_gsheet.container: "digital-bast-app"
-      ofelia.job-exec.step_06_sync_attendance_to_gsheet.command: "python main.py --step step_06_sync_attendance_to_gsheet"
+      # ofelia.job-exec.step_06_sync_attendance_to_gsheet.schedule: "30 */4 * * *" # Runs every 4 hours at minute 30
+      # ofelia.job-exec.step_06_sync_attendance_to_gsheet.container: "digital-bast-app"
+      # ofelia.job-exec.step_06_sync_attendance_to_gsheet.command: "python main.py --step step_06_sync_attendance_to_gsheet"
 
       ofelia.job-exec.step_07_process_scheduleshifting.schedule: "0 2 * * *" # Runs daily at 02:00
       ofelia.job-exec.step_07_process_scheduleshifting.container: "digital-bast-app"

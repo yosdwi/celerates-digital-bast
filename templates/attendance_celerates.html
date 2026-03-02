@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Celerates | Digital BAST</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="/admin/static/css/admin_style.css">
+    <style>
+        .attendance-table {
+            font-size: 0.75rem;
+            white-space: nowrap;
+        }
+        .attendance-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            border: 1px solid #dee2e6;
+            padding: 8px 6px;
+            text-align: center;
+            vertical-align: middle;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .attendance-table td {
+            border: 1px solid #dee2e6;
+            padding: 6px 4px;
+            text-align: center;
+            vertical-align: middle;
+        }
+        .table-scroll {
+            overflow-x: auto;
+            max-height: 70vh;
+        }
+        .filter-section {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .export-section {
+            background: white;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .employee-name {
+            text-align: left !important;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .manual-edit {
+            background-color: #fff3cd !important;
+            border-color: #ffeaa7;
+        }
+        .modal-body .row {
+            margin-bottom: 1rem;
+        }
+        @media print {
+            .sidebar, .filter-section, .export-section { display: none !important; }
+            .main-content { margin-left: 0 !important; padding: 0 !important; }
+            .attendance-table { font-size: 0.6rem; }
+            .manual-edit { background-color: #f8f9fa !important; }
+        }
+    </style>
+</head>
+<body class="dashboard-body">
+    <div class="dashboard-wrapper">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <img src="/admin/static/img/logo_celerates.jpg" alt="Celerates" class="logo">
+                <div class="brand-info">
+                    <h5 class="mb-0">Digital BAST</h5>
+                    <small class="text-muted">Admin Portal</small>
+                </div>
+            </div>
+
+            <div class="sidebar-user">
+                <div class="user-avatar">
+                    <i class="bi bi-person-circle"></i>
+                </div>
+                <div class="user-info">
+                    <div class="user-name">{{ user.name if user else 'Admin User' }}</div>
+                    <div class="user-role">{{ user.role if user else 'Owner' }}</div>
+                </div>
+            </div>
+
+            <ul class="nav flex-column sidebar-nav">
+                <li class="nav-item">
+                    <a class="nav-link" href="/admin/">
+                        <i class="bi bi-house-door-fill"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#reports" data-bs-toggle="collapse">
+                        <i class="bi bi-file-earmark-text-fill"></i>
+                        <span>Reports</span>
+                        <i class="bi bi-chevron-down ms-auto"></i>
+                    </a>
+                    <div class="collapse" id="reports">
+                        <ul class="nav flex-column sub-nav">
+                            <li class="nav-item">
+                                <a class="nav-link sub-link" href="/admin/" onclick="setReportType('iotoperation')">
+                                    <i class="bi bi-cpu"></i>
+                                    IoT Operations
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link sub-link" href="/admin/" onclick="setReportType('developer')">
+                                    <i class="bi bi-code-slash"></i>
+                                    Developer
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link active" href="/admin/attendance-celerates">
+                        <i class="bi bi-clock-history"></i>
+                        <span>Attendance Celerates</span>
+                    </a>
+                </li>
+            </ul>
+
+            <div class="sidebar-footer">
+                <a href="/auth/logout" class="nav-link logout-link">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span>Logout</span>
+                </a>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="content-header">
+                <div>
+                    <h1 class="page-title">Attendance Celerates</h1>
+                    <p class="page-subtitle">Employee attendance tracking and management</p>
+                </div>
+                <div class="current-time">
+                    <div>{{ datetime.now().strftime('%A, %B %d, %Y') }}</div>
+                    <div>{{ datetime.now().strftime('%H:%M:%S') }}</div>
+                </div>
+            </div>
+
+            <!-- Filter Section -->
+            <div class="filter-section">
+                <h5 class="mb-3"><i class="bi bi-funnel me-2"></i>Filter Options</h5>
+                <form id="filterForm" method="POST">
+                    <div class="row g-3">
+                        <div class="col-md-2">
+                            <label class="form-label">Start Date</label>
+                            <input type="date" name="start_date" class="form-control"
+                                   value="{{ start_date.strftime('%Y-%m-%d') if start_date else '' }}" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">End Date</label>
+                            <input type="date" name="end_date" class="form-control"
+                                   value="{{ end_date.strftime('%Y-%m-%d') if end_date else '' }}" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Role</label>
+                            <select id="roleFilter" class="form-select" onchange="updateEmployeeList()">
+                                <option value="">All Roles</option>
+                                <option value="Developer">Developer</option>
+                                <option value="IoT Operations">IoT Operations</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Employee</label>
+                            <div class="dropdown w-100">
+                                <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start" type="button" id="employeeDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <span id="selectedEmployeesText">Select Employees</span>
+                                </button>
+                                <ul class="dropdown-menu w-100 p-3" style="max-height: 300px; overflow-y: auto;">
+                                    <li class="mb-2">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="selectAll" onchange="toggleAllEmployees()">
+                                            <label class="form-check-label fw-bold" for="selectAll">Select All</label>
+                                        </div>
+                                        <hr class="my-2">
+                                    </li>
+                                    {% for emp_name in employee_list %}
+                                    <li class="employee-item" data-role="{{ employee_roles.get(emp_name, '') }}">
+                                        <div class="form-check">
+                                            <input class="form-check-input employee-checkbox" type="checkbox"
+                                                   name="employee" value="{{ emp_name }}" id="emp_{{ loop.index }}"
+                                                   {% if emp_name in selected_employees %}checked{% endif %}
+                                                   onchange="updateSelectAll(); updateSelectedText();">
+                                            <label class="form-check-label d-flex justify-content-between align-items-center w-100" for="emp_{{ loop.index }}">
+                                                <span>{{ emp_name }}</span>
+                                                <small class="text-muted">({{ employee_roles.get(emp_name, '') }})</small>
+                                            </label>
+                                        </div>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">&nbsp;</label>
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="bi bi-search me-1"></i>Filter
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Attendance Data Tables per Employee -->
+            {% if attendance_data %}
+                {% set employees_data = attendance_data | groupby('full_name') %}
+                {% for employee_name, employee_records in employees_data %}
+                <div class="main-card mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div class="card-header-content">
+                            <h5>
+                                <i class="bi bi-person-badge me-2"></i>
+                                {{ employee_name }}
+                            </h5>
+                            <small>{{ employee_records|length }} records</small>
+                        </div>
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-outline-success" onclick="exportEmployeeCSV('{{ employee_name }}')">
+                                <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export CSV
+                            </button>
+                            <button type="button" class="btn btn-outline-primary" onclick="printEmployeeTable('{{ employee_name }}')">
+                                <i class="bi bi-printer me-1"></i>Print
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-scroll" id="table_{{ employee_name|replace(' ', '_') }}">
+                            <table class="table table-bordered attendance-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th rowspan="2">Employee ID</th>
+                                        <th rowspan="2">Date</th>
+                                        <th rowspan="2">Shift</th>
+                                        <th rowspan="2">Shift Code</th>
+                                        <th rowspan="2">Shift Label</th>
+                                        <th colspan="2">Schedule</th>
+                                        <th rowspan="2">Attendance Code</th>
+                                        <th colspan="2">Check</th>
+                                        <th rowspan="2">Keterangan</th>
+                                        <th colspan="4">Overtime</th>
+                                        <th colspan="3">Time off</th>
+                                        <th rowspan="2">Holiday Code</th>
+                                    </tr>
+                                    <tr>
+                                        <th>In</th>
+                                        <th>Out</th>
+                                        <th>In</th>
+                                        <th>Out</th>
+                                        <th>Check In</th>
+                                        <th>Check Out</th>
+                                        <th>Check Out Before</th>
+                                        <th>Check Out After</th>
+                                        <th>Check Out</th>
+                                        <th>Break Before</th>
+                                        <th>Break After</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for record in employee_records %}
+                                    <tr {% if record.is_manual_edit %}class="manual-edit"{% endif %}>
+                                        <td>{{ record.employee_id or '' }}</td>
+                                        <td>{{ record.date.strftime('%Y-%m-%d') if record.date else '' }}</td>
+                                        <td>{{ record.shift or '' }}</td>
+                                        <td>{{ record.shift_code or '' }}</td>
+                                        <td>{{ record.shift_label or '' }}</td>
+                                        <td>{{ record.schedule_in or '' }}</td>
+                                        <td>{{ record.schedule_out or '' }}</td>
+                                        <td>{{ record.attendance_code or '' }}</td>
+                                        <td>{{ record.check_in or '' }}</td>
+                                        <td>{{ record.check_out or '' }}</td>
+                                        <td>{{ record.keterangan or '' }}</td>
+                                        <td>{{ record.overtime_check_in or '' }}</td>
+                                        <td>{{ record.overtime_check_out or '' }}</td>
+                                        <td>{{ record.overtime_before or '' }}</td>
+                                        <td>{{ record.overtime_after or '' }}</td>
+                                        <td>{{ record.timeoff_check_out or '' }}</td>
+                                        <td>{{ record.timeoff_break_before or '' }}</td>
+                                        <td>{{ record.timeoff_break_after or '' }}</td>
+                                        <td>{{ record.holiday_code or '' }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+
+                <!-- Bulk Export Section -->
+                <div class="main-card">
+                    <div class="card-header">
+                        <div class="card-header-content">
+                            <h5>
+                                <i class="bi bi-collection me-2"></i>
+                                Bulk Operations
+                            </h5>
+                            <small>Export multiple employees data</small>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button type="button" class="btn btn-success" onclick="exportAllEmployeesCSV()">
+                                <i class="bi bi-file-earmark-spreadsheet me-2"></i>Export All (Separate CSVs)
+                            </button>
+                            <button type="button" class="btn btn-outline-success" onclick="exportCombinedCSV()">
+                                <i class="bi bi-file-earmark-spreadsheet me-2"></i>Export Combined CSV
+                            </button>
+                            <button type="button" class="btn btn-outline-primary" onclick="printAllTables()">
+                                <i class="bi bi-printer me-2"></i>Print All Tables
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                <div class="main-card">
+                    <div class="card-body text-center py-5">
+                        <i class="bi bi-inbox display-1 text-muted mb-3"></i>
+                        <h5 class="text-muted">No attendance records found</h5>
+                        <p class="text-muted">Please select date range and employees, then click Filter to load data.</p>
+                    </div>
+                </div>
+            {% endif %}
+        </main>
+    </div>
+
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Page initialization
+
+        // Auto-refresh current time
+        function updateTime() {
+            const now = new Date();
+            const timeElements = document.querySelectorAll('.current-time div:last-child');
+            timeElements.forEach(el => {
+                el.textContent = now.toLocaleTimeString();
+            });
+        }
+        setInterval(updateTime, 1000);
+
+        // Role and Employee filter functions
+        function updateEmployeeList() {
+            const roleFilter = document.getElementById('roleFilter').value;
+            const employeeItems = document.querySelectorAll('.employee-item');
+            const selectAllCheckbox = document.getElementById('selectAll');
+
+            employeeItems.forEach(item => {
+                const employeeRole = item.dataset.role;
+                if (!roleFilter || employeeRole === roleFilter) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                    // Uncheck hidden employees
+                    const checkbox = item.querySelector('.employee-checkbox');
+                    checkbox.checked = false;
+                }
+            });
+
+            // Reset select all
+            selectAllCheckbox.checked = false;
+            updateSelectAll();
+        }
+
+        function toggleAllEmployees() {
+            const selectAllCheckbox = document.getElementById('selectAll');
+            const visibleCheckboxes = document.querySelectorAll('.employee-item:not([style*="none"]) .employee-checkbox');
+
+            visibleCheckboxes.forEach(checkbox => {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+
+            updateSelectedText();
+        }
+
+        function updateSelectAll() {
+            const visibleCheckboxes = document.querySelectorAll('.employee-item:not([style*="none"]) .employee-checkbox');
+            const checkedBoxes = document.querySelectorAll('.employee-item:not([style*="none"]) .employee-checkbox:checked');
+            const selectAllCheckbox = document.getElementById('selectAll');
+
+            if (visibleCheckboxes.length === checkedBoxes.length && visibleCheckboxes.length > 0) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else if (checkedBoxes.length > 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            }
+        }
+
+        function updateSelectedText() {
+            const checkedBoxes = document.querySelectorAll('.employee-checkbox:checked');
+            const selectedText = document.getElementById('selectedEmployeesText');
+
+            if (checkedBoxes.length === 0) {
+                selectedText.textContent = 'Select Employees';
+                selectedText.className = '';
+            } else if (checkedBoxes.length === 1) {
+                selectedText.textContent = checkedBoxes[0].value;
+                selectedText.className = 'fw-medium';
+            } else {
+                selectedText.textContent = `${checkedBoxes.length} employees selected`;
+                selectedText.className = 'fw-medium text-primary';
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            updateSelectedText();
+        });
+
+        // Individual Employee Export/Print Functions
+        function exportEmployeeCSV(employeeName) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/admin/attendance-celerates/export-csv';
+
+            const startDate = document.querySelector('[name="start_date"]').value;
+            const endDate = document.querySelector('[name="end_date"]').value;
+
+            form.innerHTML = `
+                <input type="hidden" name="start_date" value="${startDate}">
+                <input type="hidden" name="end_date" value="${endDate}">
+                <input type="hidden" name="employee" value="${employeeName}">
+                <input type="hidden" name="role_filter" value="">
+            `;
+
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        }
+
+        function printEmployeeTable(employeeName) {
+            const tableId = 'table_' + employeeName.replace(/ /g, '_');
+            const tableElement = document.getElementById(tableId);
+
+            if (tableElement) {
+                const printWindow = window.open('', '_blank');
+                printWindow.document.write(`
+                    <html>
+                    <head>
+                        <title>Attendance - ${employeeName}</title>
+                        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+                        <style>
+                            @media print {
+                                .table { font-size: 10px; }
+                                .table th, .table td { padding: 4px; }
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="container-fluid">
+                            <h3>${employeeName} - Attendance Report</h3>
+                            <p>Period: ${document.querySelector('[name="start_date"]').value} to ${document.querySelector('[name="end_date"]').value}</p>
+                            ${tableElement.outerHTML}
+                        </div>
+                    </body>
+                    </html>
+                `);
+                printWindow.document.close();
+                printWindow.print();
+            }
+        }
+
+        // Bulk Export/Print Functions
+        function exportAllEmployeesCSV() {
+            const checkedEmployees = Array.from(document.querySelectorAll('.employee-checkbox:checked'))
+                .map(cb => cb.value);
+
+            if (checkedEmployees.length === 0) {
+                alert('Please select at least one employee');
+                return;
+            }
+
+            // Export each employee separately
+            checkedEmployees.forEach((employeeName, index) => {
+                setTimeout(() => {
+                    exportEmployeeCSV(employeeName);
+                }, index * 500); // Delay to avoid overwhelming the server
+            });
+        }
+
+        function exportCombinedCSV() {
+            const form = document.getElementById('filterForm');
+            const formData = new FormData(form);
+
+            const exportForm = document.createElement('form');
+            exportForm.method = 'POST';
+            exportForm.action = '/admin/attendance-celerates/export-csv';
+
+            exportForm.innerHTML = `
+                <input type="hidden" name="start_date" value="${formData.get('start_date')}">
+                <input type="hidden" name="end_date" value="${formData.get('end_date')}">
+                <input type="hidden" name="employee" value="">
+                <input type="hidden" name="role_filter" value="${document.getElementById('roleFilter').value}">
+            `;
+
+            document.body.appendChild(exportForm);
+            exportForm.submit();
+            document.body.removeChild(exportForm);
+        }
+
+        function printAllTables() {
+            const printWindow = window.open('', '_blank');
+            const startDate = document.querySelector('[name="start_date"]').value;
+            const endDate = document.querySelector('[name="end_date"]').value;
+
+            let allTablesHTML = '';
+            const employeeTables = document.querySelectorAll('[id^="table_"]');
+
+            employeeTables.forEach(table => {
+                const employeeName = table.id.replace('table_', '').replace(/_/g, ' ');
+                allTablesHTML += `
+                    <div class="mb-5">
+                        <h4>${employeeName}</h4>
+                        ${table.outerHTML}
+                    </div>
+                `;
+            });
+
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>All Employees Attendance Report</title>
+                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+                    <style>
+                        @media print {
+                            .table { font-size: 8px; }
+                            .table th, .table td { padding: 2px; }
+                            h4 { page-break-before: always; }
+                            h4:first-child { page-break-before: auto; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="container-fluid">
+                        <h2>All Employees Attendance Report</h2>
+                        <p>Period: ${startDate} to ${endDate}</p>
+                        ${allTablesHTML}
+                    </div>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
+        }
+    </script>
+</body>
+</html>
