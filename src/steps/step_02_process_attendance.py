@@ -69,6 +69,11 @@ def run():
         if success_count < len(all_records_to_create):
             pass
 
+        # --- Process manual attendance entries (Created by != system@system.com) ---
+        print("Processing manual attendance entries for Unique Key generation...")
+        updated_count = nocodb_attendance.process_manual_attendance_unique_key(month_start_str, month_end_str)
+        print(f"Generated Unique Keys for {updated_count} manual attendance entries")
+
         print("Step 2: Completed.")
 
     except Exception as e:

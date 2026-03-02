@@ -471,3 +471,156 @@ class ClsNocoDBProcessor:
         except Exception as e:
             logging.error(f"Upsert jadwal shifting gagal: {e}")
             return self.create_record(schedule_data)
+
+    def process_manual_entries_unique_key(self, start_date_str: str, end_date_str: str):
+        """
+        Process manual entries (Created by != system@system.com)
+        and generate Unique Key if Date and Employee Data are not null
+        """
+        try:
+            # Get records with missing Unique Key (remove date filter for now)
+            where_clause = f"(Unique Key,null)"
+
+            records_response = self.get_records(limit=2000, where=where_clause)
+            records = records_response.get('list', [])
+
+            manual_updates = 0
+            processed_count = 0
+
+            for record in records:
+                processed_count += 1
+
+                # Check if Created by is NOT system@system.com
+                created_by = record.get('Created by', {})
+                if isinstance(created_by, dict):
+                    creator_email = created_by.get('email', '')
+                else:
+                    creator_email = str(created_by) if created_by else ''
+
+                # Skip if it's system created
+                if 'system@system.com' in creator_email:
+                    continue
+
+                # Check if Date and Employee Data exist
+                date_value = record.get('Date')
+                employee_data = record.get('Employee Data')
+                task_list = record.get('Task List', '')
+
+                if not date_value or not employee_data:
+                    continue
+
+                # Extract employee ID
+                if isinstance(employee_data, list) and len(employee_data) > 0:
+                    employee_id = str(employee_data[0])
+                elif isinstance(employee_data, str):
+                    employee_id = employee_data
+                else:
+                    continue
+
+                # Generate new Unique Key
+                new_unique_key = self.generate_task_unique_key(
+                    date_value, employee_id, task_list
+                )
+
+                # Update record with new Unique Key
+                record_id = record['Id']
+                update_data = {
+                    "id": record_id,
+                    "Unique Key": new_unique_key
+                }
+
+                endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
+                update_response = requests.patch(
+                    endpoint,
+                    headers=self.headers,
+                    json=update_data,
+                    timeout=30
+                )
+
+                if update_response.status_code in [200, 201]:
+                    manual_updates += 1
+                    logging.info(f"Generated Unique Key for manual entry: Employee {employee_id}, Date {date_value}")
+                else:
+                    logging.error(f"Failed to update Unique Key for record {record_id}: {update_response.status_code}")
+
+            print(f"Processed {processed_count} records, generated Unique Keys for {manual_updates} manual entries")
+            return manual_updates
+
+        except Exception as e:
+            logging.error(f"Error processing manual entries for Unique Key: {e}")
+            return 0
+
+    def process_manual_attendance_unique_key(self, start_date_str: str, end_date_str: str):
+        """
+        Process manual attendance entries (Created by != system@system.com)
+        and generate Unique Key if Date and Employee Data are not null
+        """
+        try:
+            # Get attendance records with missing Unique Key (remove date filter for now)
+            where_clause = f"(Unique Key,null)"
+
+            records_response = self.get_records(limit=2000, where=where_clause)
+            records = records_response.get('list', [])
+
+            manual_updates = 0
+            processed_count = 0
+
+            for record in records:
+                processed_count += 1
+
+                # Check if Created by is NOT system@system.com
+                created_by = record.get('Created by', {})
+                if isinstance(created_by, dict):
+                    creator_email = created_by.get('email', '')
+                else:
+                    creator_email = str(created_by) if created_by else ''
+
+                # Skip if it's system created
+                if 'system@system.com' in creator_email:
+                    continue
+
+                # Check if Date and Employee Data exist
+                date_value = record.get('Date')
+                employee_data = record.get('Employee Data')
+
+                if not date_value or not employee_data:
+                    continue
+
+                # Extract employee ID
+                if isinstance(employee_data, list) and len(employee_data) > 0:
+                    employee_id = str(employee_data[0])
+                elif isinstance(employee_data, str):
+                    employee_id = employee_data
+                else:
+                    continue
+
+                # Generate new Unique Key using attendance format
+                new_unique_key = self.generate_unique_key(date_value, employee_id)
+
+                # Update record with new Unique Key
+                record_id = record['Id']
+                update_data = {
+                    "id": record_id,
+                    "Unique Key": new_unique_key
+                }
+
+                endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
+                update_response = requests.patch(
+                    endpoint,
+                    headers=self.headers,
+                    json=update_data,
+                    timeout=30
+                )
+
+                if update_response.status_code in [200, 201]:
+                    manual_updates += 1
+                    logging.info(f"Generated Unique Key for manual attendance: Employee {employee_id}, Date {date_value}")
+                else:
+                    logging.error(f"Failed to update Unique Key for attendance record {record_id}: {update_response.status_code}")
+
+            print(f"Processed {processed_count} attendance records, generated Unique Keys for {manual_updates} manual entries")
+            return manual_updates
+
+        except Exception as e:
+            logging.error(f"Error processing manual attendance entries for Unique Key: {e}")
+            return 0

@@ -71,6 +71,11 @@ def run():
                 if failed_count > 0:
                     print(f"Failed: {failed_count} records (check logs above for details)")
 
+        # --- Process manual entries (Created by != system@system.com) ---
+        print("Processing manual task entries for Unique Key generation...")
+        updated_count = nocodb_tasklist.process_manual_entries_unique_key(month_start_str, month_end_str)
+        print(f"Generated Unique Keys for {updated_count} manual task entries")
+
         print("Step 3: Completed.")
 
     except Exception as e:

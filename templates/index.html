@@ -218,6 +218,9 @@
                         <small id="reportInfo">Generated report will appear below</small>
                     </div>
                     <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-success" onclick="printReport()">
+                            <i class="bi bi-printer me-1"></i>Print
+                        </button>
                         <button type="button" class="btn btn-outline-primary" onclick="openReportInNewTab()">
                             <i class="bi bi-box-arrow-up-right me-1"></i>Open in New Tab
                         </button>
@@ -341,21 +344,20 @@
             event.target.classList.add('active');
         }
 
-        // Report generation functions
+        // Report generation functions with progress tracking
+        let reportProgressInterval = null;
+
         function generateReport() {
-            console.log('generateReport called'); // Debug log
+            console.log('generateReport called');
 
             const reportType = document.getElementById('reportType').value;
             const year = document.getElementById('reportYear').value;
             const month = document.getElementById('reportMonth').value;
 
-            // Simple validation
             if (!reportType || !year || !month) {
                 alert('Please fill all fields');
                 return;
             }
-
-            console.log('Creating iframe form submission'); // Debug log
 
             const btn = document.getElementById('generateBtn');
             const btnContent = btn.querySelector('.btn-content');
@@ -368,16 +370,63 @@
 
             // Update report info
             const reportInfo = document.getElementById('reportInfo');
-            reportInfo.textContent = `${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report - ${getMonthName(month)} ${year}`;
+            reportInfo.textContent = `Generating ${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report - ${getMonthName(month)} ${year}...`;
 
-            // Show results section first
+            // Show results section with progress
             document.getElementById('reportResults').style.display = 'block';
+            showProgressBar();
 
-            // Create form and submit to iframe (iframe already has name="reportFrame")
+            // Start with timeout detection
+            let timeoutWarning = setTimeout(() => {
+                showTimeoutWarning();
+            }, 15000); // Show warning after 15 seconds
+
+            // Clear timeout when report loads
+            const iframe = document.getElementById('reportIframe');
+            iframe.onload = function() {
+                clearTimeout(timeoutWarning);
+                hideProgressBar();
+                updateReportInfo(`${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report - ${getMonthName(month)} ${year}`);
+                onReportLoaded();
+            };
+
+            // Start regular generation
+            generateReportRegular(reportType, month);
+
+            // Scroll to results
+            setTimeout(() => {
+                document.getElementById('reportResults').scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+        }
+
+        function showTimeoutWarning() {
+            const warningHtml = `
+                <div style="margin: 20px; padding: 20px; background: #fff3cd; border-radius: 8px; border: 1px solid #ffeaa7;">
+                    <h6 class="text-warning">⚠️ Report is taking longer than expected</h6>
+                    <p class="mb-2">The report is still being generated but may take several minutes due to:</p>
+                    <ul class="mb-3">
+                        <li>Large amount of data being processed</li>
+                        <li>Multiple employee timesheets</li>
+                        <li>Complex calculations</li>
+                    </ul>
+                    <p class="mb-0"><strong>Please wait...</strong> The report will load automatically when ready.</p>
+                    <div class="mt-3">
+                        <div class="spinner-border spinner-border-sm text-warning me-2"></div>
+                        <span class="text-muted">Still generating...</span>
+                    </div>
+                </div>
+            `;
+
+            const iframe = document.getElementById('reportIframe');
+            iframe.srcdoc = warningHtml;
+        }
+
+        function generateReportRegular(reportType, month) {
+            // Original iframe method as fallback
             const tempForm = document.createElement('form');
             tempForm.method = 'POST';
             tempForm.action = '/report/all';
-            tempForm.target = 'reportFrame'; // Target the iframe by name
+            tempForm.target = 'reportFrame';
             tempForm.style.display = 'none';
 
             tempForm.innerHTML = `
@@ -386,14 +435,59 @@
             `;
 
             document.body.appendChild(tempForm);
-            console.log('Submitting form to iframe with target:', tempForm.target); // Debug log
             tempForm.submit();
             document.body.removeChild(tempForm);
+        }
 
-            // Scroll to results
-            setTimeout(() => {
-                document.getElementById('reportResults').scrollIntoView({ behavior: 'smooth' });
-            }, 100);
+        function showProgressBar() {
+            const progressHtml = `
+                <div id="reportProgress" style="margin: 20px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+                    <h6>Report Generation Progress</h6>
+                    <div class="progress mb-3">
+                        <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+                    </div>
+                    <div id="progressStatus">Initializing...</div>
+                    <div id="progressSections" class="mt-3"></div>
+                </div>
+            `;
+
+            const iframe = document.getElementById('reportIframe');
+            iframe.srcdoc = progressHtml;
+        }
+
+        function hideProgressBar() {
+            // Progress will be replaced by actual report
+        }
+
+        function updateProgress(percent, status) {
+            // Update progress in iframe if visible
+            const iframe = document.getElementById('reportIframe');
+            if (iframe.contentDocument) {
+                const progressBar = iframe.contentDocument.getElementById('progressBar');
+                const progressStatus = iframe.contentDocument.getElementById('progressStatus');
+
+                if (progressBar) progressBar.style.width = percent + '%';
+                if (progressStatus) progressStatus.textContent = `${status} - ${percent}%`;
+            }
+        }
+
+        function updateProgressSections(sections) {
+            const iframe = document.getElementById('reportIframe');
+            if (iframe.contentDocument) {
+                const sectionsDiv = iframe.contentDocument.getElementById('progressSections');
+                if (sectionsDiv && sections) {
+                    sectionsDiv.innerHTML = sections.map(section =>
+                        `<div class="small ${section.completed ? 'text-success' : 'text-warning'}">
+                            ${section.completed ? '✓' : '⏳'} ${section.title}
+                        </div>`
+                    ).join('');
+                }
+            }
+        }
+
+        function updateReportInfo(text) {
+            const reportInfo = document.getElementById('reportInfo');
+            reportInfo.textContent = text;
         }
 
         function onReportLoaded() {
@@ -405,6 +499,54 @@
             btn.disabled = false;
             btnContent.classList.remove('d-none');
             btnLoading.classList.add('d-none');
+        }
+
+        function printReport() {
+            const iframe = document.getElementById('reportIframe');
+
+            if (!iframe || !iframe.src) {
+                alert('Please generate a report first');
+                return;
+            }
+
+            try {
+                // Try to access iframe content and trigger print
+                iframe.contentWindow.focus();
+                iframe.contentWindow.print();
+            } catch (e) {
+                // Fallback: open report in new window and print
+                const reportType = document.getElementById('reportType').value;
+                const year = document.getElementById('reportYear').value;
+                const month = document.getElementById('reportMonth').value;
+
+                if (!reportType || !year || !month) {
+                    alert('Please generate a report first');
+                    return;
+                }
+
+                const printForm = document.createElement('form');
+                printForm.method = 'POST';
+                printForm.action = '/report/all';
+                printForm.target = '_blank';
+                printForm.style.display = 'none';
+
+                printForm.innerHTML = `
+                    <input type="hidden" name="type" value="${reportType}">
+                    <input type="hidden" name="month" value="${month}">
+                `;
+
+                document.body.appendChild(printForm);
+                printForm.submit();
+                document.body.removeChild(printForm);
+
+                // Wait a moment then trigger print on the new window
+                setTimeout(() => {
+                    const printWindow = window.open('', '_blank');
+                    if (printWindow) {
+                        printWindow.print();
+                    }
+                }, 1000);
+            }
         }
 
         function openReportInNewTab() {

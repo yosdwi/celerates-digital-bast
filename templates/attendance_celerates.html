@@ -55,10 +55,43 @@
         }
         .manual-edit {
             background-color: #fff3cd !important;
-            border-color: #ffeaa7;
+            border-color: #ffeaa7 !important;
+        }
+
+        /* Stronger selectors to override Bootstrap table styles */
+        .attendance-table tbody tr.manual-edit {
+            background-color: #fff3cd !important;
+        }
+
+        .attendance-table tbody tr.manual-edit td {
+            background-color: #fff3cd !important;
+            border-color: #ffeaa7 !important;
+        }
+
+        .table tbody tr.manual-edit td {
+            background-color: #fff3cd !important;
         }
         .modal-body .row {
             margin-bottom: 1rem;
+        }
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+        }
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .sidebar-nav {
+            flex-grow: 1;
+        }
+        .sidebar-user {
+            margin-top: auto;
+            padding: 1rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
         }
         @media print {
             .sidebar, .filter-section, .export-section { display: none !important; }

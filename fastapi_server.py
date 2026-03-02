@@ -10,7 +10,7 @@ import re
 import psycopg2
 import bcrypt
 
-from fastapi import FastAPI, HTTPException, Depends, Request, Form, File, UploadFile, status, Query
+from fastapi import FastAPI, HTTPException, Depends, Request, Form, File, UploadFile, status, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse, Response, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -562,59 +562,6 @@ async def generate_timesheet_report(
         **final_context
     })
 
-
-@app.get("/timesheettest", response_class=HTMLResponse)
-async def timesheet_test(request: Request):
-    """Test endpoint for timesheet template with dummy data"""
-    dummy_timesheet_data = []
-
-    for day in range(1, 32):
-        from datetime import datetime
-        date_obj = datetime(2026, 1, day)
-        formatted_date = date_obj.strftime("%a, %b %-d, %Y")
-        dummy_timesheet_data.append({
-            'Date': formatted_date,
-            'Activity': "P01-Development" if day <= 30 else "",
-            'Project Name': "MTGPR/2023/6100100-Pampersada Nusantara-Talent Force Jan-Dec 2024 for PAMA" if day <= 30 else "",
-            'Internal Project ID': "",
-            'Customer Name/ID': "",
-            'PO/Contract No': "",
-            'Work Description': "Automatic R5232 switch untuk interface 1 PC ke 2 LCD800" if day <= 30 else "",
-            'Start Time': "08:00" if day <= 30 else "",
-            'End Time': "17:00" if day <= 30 else "",
-            'Break Hours': 1.0 if day <= 30 else 0,
-            'Total Hours': 8.0 if day <= 30 else 0,
-            'Over Time Hours': 0.0,
-            'Regular Hours': 8.0 if day <= 30 else 0,
-            'Is Holiday': "H" if day > 30 else "",
-            'Remarks': "Working Day" if day <= 30 else "Weekend",
-            'IsManualEdit': False
-        })
-
-    dummy_reports = [{
-        'nama': 'OVIANTO',
-        'nrp': 'MTG-TF/202411.0017',
-        'employee_id': 'MTG-TF/202411.0017',
-        'posisi': 'IoT Developer',
-        'start_date': 'Thu, Januari 01, 2026',
-        'end_date': 'Sat, Januari 31, 2026',
-        'total_break_hours': '22.00',
-        'total_hours': '176.00',
-        'total_overtime_hours': '0.00',
-        'total_regular_hours': '176.00',
-        'timesheet_rows': dummy_timesheet_data
-    }]
-
-    context = {
-        'periode': 'Januari 2026',
-        'reports': dummy_reports,
-        'logo_url': '/static/img/logo_celerates.jpg'
-    }
-
-    return templates.TemplateResponse('timesheet_report_template.html', {
-        "request": request,
-        **context
-    })
 
 @app.post("/report/tasklistdeveloper")
 async def generate_tasklistdeveloper_report(
@@ -1376,11 +1323,13 @@ async def evidence_test(request: Request):
         "evidence_data": dummy_evidence_data
     })
 
+
 @app.post("/report/all")
 async def generate_all_report(
     request: Request,
     type: str = Form(...),
-    month: int = Form(...)
+    month: int = Form(...),
+    stream: bool = Form(False)
 ):
     """
     Generates comprehensive report by merging existing HTML reports.
@@ -1426,7 +1375,7 @@ async def generate_all_report(
             "year": current_year,
             "html_sections": html_sections,
             "logo_pama_url": '/admin/static/img/logo_pama.png',
-            "logo_celerates_url": '/admin/admin/static/img/logo_celerates.jpg',
+            "logo_celerates_url": '/admin/static/img/logo_celerates.jpg',
             "datetime": datetime
         })
 
