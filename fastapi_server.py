@@ -1984,7 +1984,7 @@ async def attendance_celerates_dashboard_post(
     if not user:
         return RedirectResponse(url="/admin/login", status_code=302)
 
-    from datetime import datetime, date
+    from datetime import datetime, date, timedelta
 
     # Get employee list for filter dropdown
     employee_table = config.NOCODB_TABLES.get("employee_data")
@@ -1996,7 +1996,6 @@ async def attendance_celerates_dashboard_post(
 
     # Only load data if date parameters are provided (when filter is applied)
     if start_date and end_date:
-        print(f"Loading attendance data from {start_date} to {end_date}")
         # Parse date strings
         start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
         end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
@@ -2007,7 +2006,6 @@ async def attendance_celerates_dashboard_post(
 
         # Filter employees if specific employees selected
         target_employees = employee if employee else employee_list
-        print(f"Target employees count: {len(target_employees)}")
 
         for emp_name in target_employees:
             if emp_name not in employee_mapping:
@@ -2028,9 +2026,8 @@ async def attendance_celerates_dashboard_post(
             current_date = start_date_obj
             while current_date <= end_date_obj:
                 date_str = current_date.strftime('%Y-%m-%d')
-                rec = attendance_by_date.get(date_str)  # Get attendance record for this date, or None
+                rec = attendance_by_date.get(date_str)
 
-                # Use current_date instead of rec_date since we're iterating through date range
                 rec_date = current_date
 
                 def get_time(val):
@@ -2040,31 +2037,15 @@ async def attendance_celerates_dashboard_post(
                     time_str = str(actual_val)
                     return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
 
-                # Handle case when no attendance record exists (Day Off)
                 if rec is None:
-                    # No attendance record - treat as Day Off
-                    last_modified = ''
-                    is_manual_edit = False
-                    start_time = ''
-                    end_time = ''
-                    holiday = ''
-                    attendance_code = ''
-                    keterangan = ''
-                    overtime_fields = {'overtime_check_in': '', 'overtime_check_out': '',
-                                     'overtime_before': '', 'overtime_after': ''}
+                    last_modified, is_manual_edit, start_time, end_time, holiday, attendance_code, keterangan = '', False, '', '', '', '', ''
+                    overtime_fields = {'overtime_check_in': '', 'overtime_check_out': '', 'overtime_before': '', 'overtime_after': ''}
                     timeoff_fields = {'timeoff_check_out': '', 'timeoff_break_before': '', 'timeoff_break_after': ''}
                 else:
-                    # Attendance record exists - process normally
                     last_modified = rec.get('Last Modified', '')
-                    is_manual_edit = False
-                    if last_modified and '@system.com' not in str(last_modified):
-                        is_manual_edit = True
-
-                    start_time = get_time(rec.get('Start Time'))
-                    end_time = get_time(rec.get('End Time'))
-                    holiday = rec.get('Holiday', '')
-                    attendance_code = rec.get('Attendance_Code', '')
-                    keterangan = rec.get('Remarks', '')
+                    is_manual_edit = '@system.com' not in str(last_modified) if last_modified else False
+                    start_time, end_time = get_time(rec.get('Start Time')), get_time(rec.get('End Time'))
+                    holiday, attendance_code, keterangan = rec.get('Holiday', ''), rec.get('Attendance_Code', ''), rec.get('Remarks', '')
                     overtime_fields = {
                         'overtime_check_in': get_time(rec.get('Overtime_Check_In')),
                         'overtime_check_out': get_time(rec.get('Overtime_Check_Out')),
@@ -2077,110 +2058,53 @@ async def attendance_celerates_dashboard_post(
                         'timeoff_break_after': get_time(rec.get('TimeOff_Break_After'))
                     }
 
-                # Check if employee is IoT Operations (applies to both cases)
                 is_iot_operations = emp_info.get('role') == 'IoT Operations'
-
-                # Get schedule data from schedule_shifting table for IoT Operations
-                schedule_in_time = '7:30'  # Default for Developer
-                schedule_out_time = '16:30'  # Default for Developer
-                shift_code = 'N'  # Default
+                schedule_in_time, schedule_out_time, shift_code = '7:30', '16:30', 'N'
 
                 if is_iot_operations:
-                    # Get schedule from schedule_shifting table
                     schedule_table = config.NOCODB_TABLES.get("schedule_shifting")
                     nocodb_schedule = ClsNocoDBProcessor(config.APP_BASE_ID, schedule_table)
-
                     where_schedule = f"(Employee Name,like,{emp_name.strip().title()})~and(Date,eq,{rec_date.strftime('%Y-%m-%d')})"
-                    schedule_response = nocodb_schedule.get_records(limit=5, where=where_schedule)
-                    schedule_records = schedule_response.get('list', []) if schedule_response else []
+                    schedule_records = nocodb_schedule.get_records(limit=5, where=where_schedule).get('list', [])
 
                     if schedule_records:
                         schedule = schedule_records[0]
-                        shift_data = schedule.get('Shift Data', 0)
-
-                        if shift_data == 0:
-                            # No shift assigned = Day Off
-                            shift_code = 'Day Off'
-                            schedule_in_time = ''
-                            schedule_out_time = ''
+                        if not schedule.get('Shift Data'):
+                            shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
                         else:
-                            # Has shift assigned
-                            codes = schedule.get('Code', [])
-                            start_times = schedule.get('Start Time', [])
-                            end_times = schedule.get('End Time', [])
-
+                            codes, start_times, end_times = schedule.get('Code', []), schedule.get('Start Time', []), schedule.get('End Time', [])
                             if codes and start_times and end_times:
-                                # Use the Code field directly
                                 shift_code = codes[0] if isinstance(codes, list) else codes
-                                start_time_raw = start_times[0] if isinstance(start_times, list) else start_times
-                                end_time_raw = end_times[0] if isinstance(end_times, list) else end_times
-
-                                # Format schedule times
+                                start_time_raw, end_time_raw = (start_times[0] if isinstance(start_times, list) else start_times), (end_times[0] if isinstance(end_times, list) else end_times)
                                 schedule_in_time = ':'.join(str(start_time_raw).split(':')[:2]) if start_time_raw else '7:30'
                                 schedule_out_time = ':'.join(str(end_time_raw).split(':')[:2]) if end_time_raw else '16:30'
                             else:
-                                shift_code = 'Day Off'
-                                schedule_in_time = ''
-                                schedule_out_time = ''
+                                shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
                     else:
-                        # No schedule record found = Day Off
-                        shift_code = 'Day Off'
-                        schedule_in_time = ''
-                        schedule_out_time = ''
+                        shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
                 else:
-                    # For Developer role - use existing logic
-                    has_time = start_time or end_time
-                    is_holiday = str(holiday).upper() == 'H'
-                    shift_code = 'Day Off' if is_holiday or not has_time else 'N'
-
-                    if is_holiday or not has_time:
-                        schedule_in_time = ''
-                        schedule_out_time = ''
+                    if str(holiday).upper() == 'H' or not (start_time or end_time):
+                        shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
 
                 attendance_data.append({
-                    'employee_id': emp_info.get('employee_id', emp_info.get('nrp', '')),
-                    'full_name': emp_name,
-                    'date': rec_date,
-                    'shift': shift_code,
-                    'shift_code': '',  # Not available in basic attendance table
-                    'shift_label': '',  # Not available in basic attendance table
-                    'schedule_in': schedule_in_time,
-                    'schedule_out': schedule_out_time,
-                    'attendance_code': attendance_code,
-                    'check_in': start_time,
-                    'check_out': end_time,
-                    'keterangan': keterangan,
-                    'overtime_check_in': overtime_fields['overtime_check_in'],
-                    'overtime_check_out': overtime_fields['overtime_check_out'],
-                    'overtime_before': overtime_fields['overtime_before'],
-                    'overtime_after': overtime_fields['overtime_after'],
-                    'timeoff_check_out': timeoff_fields['timeoff_check_out'],
-                    'timeoff_break_before': timeoff_fields['timeoff_break_before'],
-                    'timeoff_break_after': timeoff_fields['timeoff_break_after'],
-                    'holiday_code': holiday,
-                    'is_manual_edit': is_manual_edit
+                    'employee_id': emp_info.get('employee_id', emp_info.get('nrp', '')), 'full_name': emp_name, 'date': rec_date,
+                    'shift': shift_code, 'shift_code': '', 'shift_label': '', 'schedule_in': schedule_in_time, 'schedule_out': schedule_out_time,
+                    'attendance_code': attendance_code, 'check_in': start_time, 'check_out': end_time, 'keterangan': keterangan,
+                    **overtime_fields, **timeoff_fields, 'holiday_code': holiday, 'is_manual_edit': is_manual_edit
                 })
 
-                # Move to next date
                 current_date += timedelta(days=1)
 
-    # Sort by employee name and date
     if attendance_data:
         attendance_data.sort(key=lambda x: (x['full_name'], x['date']))
 
-    # Create employee_roles mapping for template
     employee_roles = {emp_name: emp_info.get('role', '') for emp_name, emp_info in employee_mapping.items()}
 
     return templates.TemplateResponse('attendance_celerates.html', {
-        "request": request,
-        "user": user,
-        "attendance_data": attendance_data,
-        "employee_list": employee_list,
-        "employee_roles": employee_roles,
-        "start_date": datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else None,
+        "request": request, "user": user, "attendance_data": attendance_data, "employee_list": employee_list,
+        "employee_roles": employee_roles, "start_date": datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else None,
         "end_date": datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else None,
-        "selected_employees": employee if employee else [],
-        "datetime": datetime
+        "selected_employees": employee if employee else [], "datetime": datetime
     })
 
 @app.post("/admin/attendance-celerates/export-csv")
