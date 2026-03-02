@@ -357,9 +357,26 @@ async def admin_index(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/admin/login", status_code=302)
+
+    from datetime import datetime
+
+    # Get employee list for filter dropdown, needed for the attendance form in index.html
+    employee_table = config.NOCODB_TABLES.get("employee_data")
+    nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
+    employee_mapping = nocodb_employee.get_all_employees()
+    employee_list = list(employee_mapping.keys())
+    employee_roles = {emp_name: emp_info.get('role', '') for emp_name, emp_info in employee_mapping.items()}
+
     return templates.TemplateResponse('index.html', {
         "request": request,
-        "user": user
+        "user": user,
+        "employee_list": employee_list,
+        "employee_roles": employee_roles,
+        "start_date": None,
+        "end_date": None,
+        "selected_employees": [],
+        "datetime": datetime,
+        "attendance_data": None  # Use None to indicate it's the initial load
     })
 
 @app.post("/report/pama/attendance")
