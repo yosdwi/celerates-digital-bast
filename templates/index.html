@@ -660,17 +660,14 @@
                 link.classList.remove('active');
             });
 
-            // Update page title and subtitle
+            // Update page title
             const pageTitle = document.getElementById('pageTitle');
-            const pageSubtitle = document.getElementById('pageSubtitle');
 
             if (sectionName === 'dashboard') {
                 pageTitle.textContent = 'Report BAST';
-                pageSubtitle.textContent = 'Generate comprehensive PAMA BAST reports';
                 event.target.classList.add('active');
             } else if (sectionName === 'attendance') {
                 pageTitle.textContent = 'Attendance Celerates';
-                pageSubtitle.textContent = 'Employee attendance tracking and management';
                 event.target.classList.add('active');
                 // Initialize attendance functions
                 updateSelectedText();
