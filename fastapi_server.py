@@ -457,7 +457,7 @@ async def generate_pama_attendance_report(
         'periode': f"{start_date.strftime('%d %B %Y')} - {end_date.strftime('%d %B %Y')}",
         'dicetak': datetime.now().strftime('%d %B %Y %H:%M:%S'),
         'reports': reports_data,
-        'logo_url': '/static/img/logo_pama.png'
+        'logo_url': '/admin/static/img/logo_pama.png'
     }
 
     return templates.TemplateResponse('attendance_report_template.html', {
@@ -561,7 +561,7 @@ async def generate_timesheet_report(
     final_context = {
         'periode': f"{month_name} {year}",
         'reports': reports_data,
-        'logo_url': '/static/img/logo_pama.png'
+        'logo_url': '/admin/static/img/logo_pama.png'
     }
 
     return templates.TemplateResponse('timesheet_report_template.html', {
@@ -1502,7 +1502,7 @@ async def _render_single_timesheet_html(employee_data: dict, request: Request):
             "request": request,
             "reports": [employee_data],
             "periode": employee_data['periode'],
-            "logo_url": '/static/img/logo_pama.png'
+            "logo_url": '/admin/static/img/logo_pama.png'
         })
 
         return html_content
@@ -1779,7 +1779,7 @@ async def _get_attendance_html_section(month: int, year: int, report_type: str, 
                 "periode": f"{start_date.strftime('%d %B %Y')} - {end_date.strftime('%d %B %Y')}",
                 "dicetak": datetime.now().strftime('%d %B %Y %H:%M:%S'),
                 "reports": reports_data,
-                "logo_url": '/static/img/logo_pama.png'
+                "logo_url": '/admin/static/img/logo_pama.png'
             })
 
             clean_content = html_content
