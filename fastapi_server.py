@@ -1978,7 +1978,7 @@ async def attendance_celerates_dashboard_post(
             emp_info = employee_mapping[emp_name]
             where_clause = f"(Name,like,%{emp_name.strip().title()}%)"
             response = nocodb_attendance.get_records(limit=2000, where=where_clause)
-        records = response.get('list', []) if response else []
+            records = response.get('list', []) if response else []
 
             # Create a lookup dict for attendance records by date
             attendance_by_date = {}
