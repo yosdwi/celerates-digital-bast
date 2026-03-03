@@ -1637,7 +1637,7 @@ async def _call_developer_endpoint(page: str, month: int, request: Request):
 
         where_clause = f"(Month,eq,{month_name})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
         response = nocodb.get_records(limit=2000, where=where_clause)
-    records = response.get('list', []) if response else []
+        records = response.get('list', []) if response else []
 
         if page == "kualitas":
             response = await _generate_dev_kualitas_data(request, records, month_name)
