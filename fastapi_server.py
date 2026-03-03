@@ -425,7 +425,8 @@ async def generate_pama_attendance_report(
             continue
 
         where_clause = f"(Name,like,%{name.strip().title()}%)"
-        records = nocodb_attendance.get_records(limit=2000, where=where_clause).get('list', [])
+        response = nocodb_attendance.get_records(limit=2000, where=where_clause)
+        records = response.get('list', []) if response else []
 
         attendance_data = []
         for rec in records:
@@ -646,7 +647,8 @@ async def _generate_dev_kategori_page(request: Request, page: str, month_name: s
         raise HTTPException(400, f"Invalid page: {page}")
 
     where_clause = f"(Month,eq,{month_name})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
-    records = nocodb.get_records(limit=2000, where=where_clause).get('list', [])
+    response = nocodb.get_records(limit=2000, where=where_clause)
+    records = response.get('list', []) if response else []
 
     if page == "kualitas":
         return await _generate_dev_kualitas_data(request, records, month_name)
@@ -896,7 +898,8 @@ async def generate_tasklistiotoperation_report(
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
     where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
-    records = nocodb.get_records(limit=2000, where=where_clause).get('list', [])
+    response = nocodb.get_records(limit=2000, where=where_clause)
+    records = response.get('list', []) if response else []
 
     if page == "problem":
         return await _generate_iot_problem_page(request, records, month_name)
@@ -958,7 +961,8 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     engineer_manage_service = "Muhammad Fauzan Acyuto"
     where_clause = f"(Month,eq,{month_name})~and(PIC,like,%{engineer_manage_service}%)~and(Status,eq,Closed)"
 
-    dev_records = dev_nocodb.get_records(limit=2000, where=where_clause).get('list', [])
+    dev_response = dev_nocodb.get_records(limit=2000, where=where_clause)
+    dev_records = dev_response.get('list', []) if dev_response else []
 
     if not dev_records:
         return await _generate_iot_aktivitas_fallback(request, records, month_name)
@@ -1245,7 +1249,8 @@ async def generate_evidence_report(
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
     where_clause = f"(Month,eq,{month_name})~and(Evidence Task,notnull)"
-    records = nocodb.get_records(limit=2000, where=where_clause).get('list', [])
+    response = nocodb.get_records(limit=2000, where=where_clause)
+    records = response.get('list', []) if response else []
 
     if not records:
         return templates.TemplateResponse('evidence/evidence_aktivitas.html', {
@@ -1434,7 +1439,7 @@ async def _generate_single_employee_timesheet(name: str, info: dict, month: int,
 
     where = f"(Calendar Month,eq,{month_name})~and(Employee Name,like,%{name}%)"
     response = nocodb_timesheet.get_records(limit=2000, where=where)
-    records = response.get('list', [])
+    records = response.get('list', []) if response else []
 
     if not records:
         return None
@@ -1587,7 +1592,8 @@ async def _call_iot_endpoint(page: str, month: int, request: Request):
 
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
     where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
-    records = nocodb.get_records(limit=2000, where=where_clause).get('list', [])
+    response = nocodb.get_records(limit=2000, where=where_clause)
+    records = response.get('list', []) if response else []
 
     response = None
     if page == "problem":
@@ -1630,7 +1636,8 @@ async def _call_developer_endpoint(page: str, month: int, request: Request):
             return ""
 
         where_clause = f"(Month,eq,{month_name})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
-        records = nocodb.get_records(limit=2000, where=where_clause).get('list', [])
+        response = nocodb.get_records(limit=2000, where=where_clause)
+    records = response.get('list', []) if response else []
 
         if page == "kualitas":
             response = await _generate_dev_kualitas_data(request, records, month_name)
@@ -1660,7 +1667,8 @@ async def _get_evidence_html_section(evidence_type: str, month: int, request: Re
 
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
     where_clause = f"(Month,eq,{month_name})~and(Evidence Task,notnull)"
-    records = nocodb.get_records(limit=2000, where=where_clause).get('list', [])
+    response = nocodb.get_records(limit=2000, where=where_clause)
+    records = response.get('list', []) if response else []
     
     evidence_data = []
     if records:
@@ -1729,7 +1737,8 @@ async def _get_attendance_html_section(month: int, year: int, report_type: str, 
             continue
 
         where_clause = f"(Name,like,%{name.strip().title()}%)"
-        records = nocodb_attendance.get_records(limit=2000, where=where_clause).get('list', [])
+        response = nocodb_attendance.get_records(limit=2000, where=where_clause)
+        records = response.get('list', []) if response else []
 
         attendance_data = []
         for rec in records:
@@ -1968,7 +1977,8 @@ async def attendance_celerates_dashboard_post(
 
             emp_info = employee_mapping[emp_name]
             where_clause = f"(Name,like,%{emp_name.strip().title()}%)"
-            records = nocodb_attendance.get_records(limit=2000, where=where_clause).get('list', [])
+            response = nocodb_attendance.get_records(limit=2000, where=where_clause)
+        records = response.get('list', []) if response else []
 
             # Create a lookup dict for attendance records by date
             attendance_by_date = {}
@@ -2020,7 +2030,8 @@ async def attendance_celerates_dashboard_post(
                     schedule_table = config.NOCODB_TABLES.get("schedule_shifting")
                     nocodb_schedule = ClsNocoDBProcessor(config.APP_BASE_ID, schedule_table)
                     where_schedule = f"(Employee Name,like,{emp_name.strip().title()})~and(Date,eq,{rec_date.strftime('%Y-%m-%d')})"
-                    schedule_records = nocodb_schedule.get_records(limit=5, where=where_schedule).get('list', [])
+                    schedule_response = nocodb_schedule.get_records(limit=5, where=where_schedule)
+                    schedule_records = schedule_response.get('list', []) if schedule_response else []
 
                     if schedule_records:
                         schedule = schedule_records[0]
@@ -2107,7 +2118,8 @@ async def export_attendance_celerates_csv(
 
         emp_info = employee_mapping[emp_name]
         where_clause = f"(Name,like,%{emp_name.strip().title()}%)"
-        records = nocodb_attendance.get_records(limit=2000, where=where_clause).get('list', [])
+        response = nocodb_attendance.get_records(limit=2000, where=where_clause)
+        records = response.get('list', []) if response else []
 
         for rec in records:
             rec_date_str = rec.get('Date')
@@ -2242,4 +2254,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=False, timeout_keep_alive=1800)
