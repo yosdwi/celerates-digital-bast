@@ -138,7 +138,7 @@
                         <li><a class="dropdown-item" href="#"><i class="bi bi-question-circle me-2"></i>Help</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
-                            <a class="dropdown-item text-danger" href="/auth/logout" onclick="return confirm('Are you sure you want to logout?')">
+                            <a class="dropdown-item text-danger" href="/admin/auth/logout" onclick="return confirm('Are you sure you want to logout?')">
                                 <i class="bi bi-box-arrow-right me-2"></i>Logout
                             </a>
                         </li>
@@ -376,15 +376,9 @@
             document.getElementById('reportResults').style.display = 'block';
             showProgressBar();
 
-            // Start with timeout detection
-            let timeoutWarning = setTimeout(() => {
-                showTimeoutWarning();
-            }, 15000); // Show warning after 15 seconds
-
             // Clear timeout when report loads
             const iframe = document.getElementById('reportIframe');
             iframe.onload = function() {
-                clearTimeout(timeoutWarning);
                 hideProgressBar();
                 updateReportInfo(`${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report - ${getMonthName(month)} ${year}`);
                 onReportLoaded();
@@ -399,27 +393,6 @@
             }, 100);
         }
 
-        function showTimeoutWarning() {
-            const warningHtml = `
-                <div style="margin: 20px; padding: 20px; background: #fff3cd; border-radius: 8px; border: 1px solid #ffeaa7;">
-                    <h6 class="text-warning">⚠️ Report is taking longer than expected</h6>
-                    <p class="mb-2">The report is still being generated but may take several minutes due to:</p>
-                    <ul class="mb-3">
-                        <li>Large amount of data being processed</li>
-                        <li>Multiple employee timesheets</li>
-                        <li>Complex calculations</li>
-                    </ul>
-                    <p class="mb-0"><strong>Please wait...</strong> The report will load automatically when ready.</p>
-                    <div class="mt-3">
-                        <div class="spinner-border spinner-border-sm text-warning me-2"></div>
-                        <span class="text-muted">Still generating...</span>
-                    </div>
-                </div>
-            `;
-
-            const iframe = document.getElementById('reportIframe');
-            iframe.srcdoc = warningHtml;
-        }
 
         function generateReportRegular(reportType, month) {
             // Original iframe method as fallback
@@ -441,13 +414,10 @@
 
         function showProgressBar() {
             const progressHtml = `
-                <div id="reportProgress" style="margin: 20px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
-                    <h6>Report Generation Progress</h6>
-                    <div class="progress mb-3">
-                        <div class="progress-bar" id="progressBar" style="width: 0%"></div>
-                    </div>
-                    <div id="progressStatus">Initializing...</div>
-                    <div id="progressSections" class="mt-3"></div>
+                <div style="text-align: center; padding: 50px; font-family: Arial;">
+                    <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+                    <h5>Generating Report...</h5>
+                    <p class="text-muted">Please wait, this may take several minutes</p>
                 </div>
             `;
 
@@ -459,31 +429,6 @@
             // Progress will be replaced by actual report
         }
 
-        function updateProgress(percent, status) {
-            // Update progress in iframe if visible
-            const iframe = document.getElementById('reportIframe');
-            if (iframe.contentDocument) {
-                const progressBar = iframe.contentDocument.getElementById('progressBar');
-                const progressStatus = iframe.contentDocument.getElementById('progressStatus');
-
-                if (progressBar) progressBar.style.width = percent + '%';
-                if (progressStatus) progressStatus.textContent = `${status} - ${percent}%`;
-            }
-        }
-
-        function updateProgressSections(sections) {
-            const iframe = document.getElementById('reportIframe');
-            if (iframe.contentDocument) {
-                const sectionsDiv = iframe.contentDocument.getElementById('progressSections');
-                if (sectionsDiv && sections) {
-                    sectionsDiv.innerHTML = sections.map(section =>
-                        `<div class="small ${section.completed ? 'text-success' : 'text-warning'}">
-                            ${section.completed ? '✓' : '⏳'} ${section.title}
-                        </div>`
-                    ).join('');
-                }
-            }
-        }
 
         function updateReportInfo(text) {
             const reportInfo = document.getElementById('reportInfo');

@@ -335,6 +335,12 @@ async def auth_logout(request: Request):
     logout_user(request)
     return RedirectResponse(url="/login", status_code=302)
 
+@app.get("/admin/auth/logout")
+async def admin_auth_logout(request: Request):
+    """Handle admin logout"""
+    logout_user(request)
+    return RedirectResponse(url="/admin/login", status_code=302)
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Serves the main page with the report generation form (protected route)."""
