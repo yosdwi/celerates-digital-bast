@@ -36,33 +36,43 @@ DB_PATH = "generation_plans.db"
 
 def init_db():
     """Initialize SQLite database for generation plans"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS generation_plans (
-            id TEXT PRIMARY KEY,
-            plan_data TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    try:
+        print(f"🔧 Initializing database at: {os.path.abspath(DB_PATH)}")
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS generation_plans (
+                id TEXT PRIMARY KEY,
+                plan_data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+        conn.close()
+        print("✅ Database table created successfully")
+    except Exception as e:
+        print(f"❌ Database initialization error: {e}")
+        raise
 
 def save_generation_plan(plan_data: dict) -> str:
     """Save generation plan to database and return plan_id"""
-    plan_id = str(uuid.uuid4())
-    plan_data['plan_id'] = plan_id
+    try:
+        plan_id = str(uuid.uuid4())
+        plan_data['plan_id'] = plan_id
 
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        'INSERT INTO generation_plans (id, plan_data) VALUES (?, ?)',
-        (plan_id, json.dumps(plan_data))
-    )
-    conn.commit()
-    conn.close()
-    return plan_id
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT INTO generation_plans (id, plan_data) VALUES (?, ?)',
+            (plan_id, json.dumps(plan_data))
+        )
+        conn.commit()
+        conn.close()
+        return plan_id
+    except Exception as e:
+        print(f"❌ Failed to save generation plan: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save generation plan: {str(e)}")
 
 def get_generation_plan(plan_id: str) -> Optional[dict]:
     """Get generation plan from database"""
@@ -1649,6 +1659,9 @@ async def generate_plan(
         }
 
     except Exception as e:
+        print(f"❌ Generate plan error: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
         return {
             "success": False,
             "error": str(e)
@@ -2914,6 +2927,16 @@ async def export_attendance_celerates_csv(
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "digital-bast-admin"}
+
+# Initialize database on startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database and other startup tasks"""
+    try:
+        init_db()
+        print("✅ Database initialized successfully")
+    except Exception as e:
+        print(f"❌ Database initialization failed: {e}")
 
 if __name__ == "__main__":
     import uvicorn

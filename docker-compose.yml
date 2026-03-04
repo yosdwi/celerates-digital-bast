@@ -19,6 +19,8 @@ services:
     container_name: digital-bast-web
     env_file: .env
     command: ["python", "fastapi_server.py"]
+    volumes:
+      - ./generation_plans.db:/app/generation_plans.db
     expose:
       - "8000"
     networks:
