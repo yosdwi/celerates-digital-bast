@@ -37,7 +37,6 @@ DB_PATH = "generation_plans.db"
 def init_db():
     """Initialize SQLite database for generation plans"""
     try:
-        print(f"🔧 Initializing database at: {os.path.abspath(DB_PATH)}")
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute('''
@@ -50,9 +49,7 @@ def init_db():
         ''')
         conn.commit()
         conn.close()
-        print("✅ Database table created successfully")
     except Exception as e:
-        print(f"❌ Database initialization error: {e}")
         raise
 
 def save_generation_plan(plan_data: dict) -> str:
@@ -71,7 +68,6 @@ def save_generation_plan(plan_data: dict) -> str:
         conn.close()
         return plan_id
     except Exception as e:
-        print(f"❌ Failed to save generation plan: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save generation plan: {str(e)}")
 
 def get_generation_plan(plan_id: str) -> Optional[dict]:
@@ -1964,7 +1960,7 @@ async def _generate_single_employee_attendance(employee_name: str, employee_mapp
                 rec_date = datetime.strptime(rec_date_str, '%Y-%m-%d').date()
                 if start_date.date() <= rec_date <= end_date.date():
                     attendance_data.append({
-                        'nrp': emp_info.get('NRP', ''),
+                        'nrp': emp_info.get('nrp', ''),
                         'nama': employee_name,
                         'tanggal_kehadiran': rec_date.strftime('%d/%m/%Y'),
                         'jam_kehadiran': format_attendance_time(record.get('Start Time'), record.get('End Time'))
@@ -1978,12 +1974,12 @@ async def _generate_single_employee_attendance(employee_name: str, employee_mapp
             html_content = template.render(
                 request=request,
                 reports=[{
-                    'nrp': emp_info.get('NRP', ''),
+                    'nrp': emp_info.get('nrp', ''),
                     'nama': employee_name.upper(),
                     'attendance_rows': attendance_data
                 }],
-                periode=f"{month}/{year}",
-                dicetak=datetime.now().strftime('%d/%m/%Y'),
+                periode=f"{['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'][month]} {year}",
+                dicetak=datetime.now().strftime('%d %B %Y, %H:%M:%S'),
                 logo_url='/admin/static/img/logo_pama.png'
             )
 
@@ -2035,16 +2031,17 @@ async def _get_developer_tasklist_html_content(month: int, section_type: str, re
         }
         month_name = indonesian_months[month]
 
-        table_id = config.NOCODB_TABLES.get("tasklist_developer")
+        table_id = config.NOCODB_TABLES.get("tasklist")  # Use "tasklist" instead of "tasklist_developer"
         if not table_id:
+            print(f"❌ No table ID found for tasklist in config: {config.NOCODB_TABLES}")
             return ""
 
         nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
         kategori_mapping = {
-            "kualitas": "Kualitas Kode",
-            "waktu": "Waktu Rilis",
-            "dukungan": "Dukungan dan Support"
+            "kualitas": "Detail Aktivitas Kualitas Kode",
+            "waktu": "Detail Aktivitas Waktu Rilis",
+            "dukungan": "Detail Aktivitas Dukungan Support"
         }
 
         kategori_name = kategori_mapping.get(section_type)

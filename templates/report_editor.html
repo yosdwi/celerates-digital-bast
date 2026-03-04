@@ -638,7 +638,23 @@
         <div class="page-container">
 
             {% for section in html_sections %}
-                {% if section.type == 'timesheet' %}
+                {% if section.type == 'timesheet_header' or section.type == 'tasklist_header' or section.type == 'attendance_header' or section.type == 'evidence_header' %}
+                    <!-- Header Section - Professional Document Style -->
+                    <div class="page portrait" data-section-index="{{ loop.index }}">
+                        <div style="display: flex; align-items: center; justify-content: center; height: 100%; text-align: center;">
+                            <div>
+                                <h1 style="font-size: 2.5rem; font-weight: 400; color: #000; margin: 0; font-family: 'Times New Roman', serif; text-transform: uppercase;">
+                                    {% if section.title.startswith('1.') %}TIMESHEET
+                                    {% elif section.title.startswith('2.') %}TASK LIST
+                                    {% elif section.title.startswith('3.') %}EVIDENCE
+                                    {% elif section.title.startswith('4.') %}ATTENDANCE
+                                    {% else %}{{ section.title }}{% endif %}
+                                </h1>
+                            </div>
+                        </div>
+                    </div>
+
+                {% elif section.type == 'timesheet' %}
                     <!-- Timesheet pages - Landscape -->
                     <div class="page landscape" data-section-index="{{ loop.index }}">
                         <!-- Page Header with Logos -->
