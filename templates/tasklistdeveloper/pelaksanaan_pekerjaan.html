@@ -15,16 +15,16 @@
             font-weight: bold;
             margin-bottom: 20px;
         }
-        .table-container {
+        .dev-pelaksanaan-section .table-container {
             border: 2px solid #000;
             width: 100%;
         }
-        table {
+        .dev-pelaksanaan-section table {
             width: 100%;
             border-collapse: collapse;
             font-size: 14px;
         }
-        th {
+        .dev-pelaksanaan-section th {
             background-color: #9BB5D6;
             color: #000;
             font-weight: bold;
@@ -32,7 +32,7 @@
             text-align: center;
             border: 1px solid #000;
         }
-        td {
+        .dev-pelaksanaan-section td {
             padding: 15px 10px;
             border: 1px solid #000;
             text-align: left;
@@ -54,7 +54,8 @@
 <body>
     <!-- <div class="header">1. Pelaksanaan Pekerjaan</div> -->
 
-    <div class="table-container">
+    <div class="dev-pelaksanaan-section">
+        <div class="table-container">
         <table>
             <thead>
                 <tr>
@@ -73,6 +74,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
 </body>
 </html>

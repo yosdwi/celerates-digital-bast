@@ -44,11 +44,9 @@
     </style>
 </head>
 <body>
-    <!-- <div class="header">Evidence Aktivitas</div> -->
-
     {% for item in evidence_data %}
     <div class="evidence-item">
-        <div class="evidence-title">{{ item.number }}. {{ item.title }}</div>
+        <div class="evidence-title">3.{{ item.number }}. {{ item.title }}</div>
         {% if item.image_path %}
         <img src="{{ item.image_path }}" alt="{{ item.title }}" class="evidence-image" />
         {% endif %}

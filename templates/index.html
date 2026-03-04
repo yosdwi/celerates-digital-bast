@@ -363,53 +363,26 @@
             const btnContent = btn.querySelector('.btn-content');
             const btnLoading = btn.querySelector('.btn-loading');
 
-            // Show loading state
-            btn.disabled = true;
-            btnContent.classList.add('d-none');
-            btnLoading.classList.remove('d-none');
-
-            // Update report info
-            const reportInfo = document.getElementById('reportInfo');
-            reportInfo.textContent = `Generating ${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report - ${getMonthName(month)} ${year}...`;
-
-            // Show results section with progress
-            document.getElementById('reportResults').style.display = 'block';
-            showProgressBar();
-
-            // Clear timeout when report loads
-            const iframe = document.getElementById('reportIframe');
-            iframe.onload = function() {
-                hideProgressBar();
-                updateReportInfo(`${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report - ${getMonthName(month)} ${year}`);
-                onReportLoaded();
-            };
-
-            // Start regular generation
+            // Directly redirect to progressive generator (no loading state needed)
             generateReportRegular(reportType, month);
-
-            // Scroll to results
-            setTimeout(() => {
-                document.getElementById('reportResults').scrollIntoView({ behavior: 'smooth' });
-            }, 100);
         }
 
 
         function generateReportRegular(reportType, month) {
-            // Original iframe method as fallback
-            const tempForm = document.createElement('form');
-            tempForm.method = 'POST';
-            tempForm.action = '/report/all';
-            tempForm.target = 'reportFrame';
-            tempForm.style.display = 'none';
+            // Redirect to progressive generator instead of iframe
+            const progressiveForm = document.createElement('form');
+            progressiveForm.method = 'POST';
+            progressiveForm.action = '/report/all'; // This will redirect to progressive generator
+            progressiveForm.style.display = 'none';
 
-            tempForm.innerHTML = `
+            progressiveForm.innerHTML = `
                 <input type="hidden" name="type" value="${reportType}">
                 <input type="hidden" name="month" value="${month}">
             `;
 
-            document.body.appendChild(tempForm);
-            tempForm.submit();
-            document.body.removeChild(tempForm);
+            document.body.appendChild(progressiveForm);
+            progressiveForm.submit();
+            document.body.removeChild(progressiveForm);
         }
 
         function showProgressBar() {

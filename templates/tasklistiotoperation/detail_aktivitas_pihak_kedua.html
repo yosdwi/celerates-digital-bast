@@ -15,17 +15,17 @@
             font-weight: bold;
             margin-bottom: 20px;
         }
-        .table-container {
+        .iot-aktivitas-section .table-container {
             border: 2px solid #000;
             width: 100%;
             margin-bottom: 20px;
         }
-        table {
+        .iot-aktivitas-section table {
             width: 100%;
             border-collapse: collapse;
             font-size: 12px;
         }
-        th {
+        .iot-aktivitas-section th {
             background-color: #9BB5D6;
             color: #000;
             font-weight: bold;
@@ -34,7 +34,7 @@
             border: 1px solid #000;
             vertical-align: middle;
         }
-        td {
+        .iot-aktivitas-section td {
             padding: 8px;
             border: 1px solid #000;
             text-align: center;
@@ -66,7 +66,8 @@
 <body>
     <!-- <div class="header">2. Detail Aktivitas lainnya yang dilakukan oleh Pihak Kedua:</div> -->
 
-    <div class="table-container">
+    <div class="iot-aktivitas-section">
+        <div class="table-container">
         <table>
             <thead>
                 <tr>
@@ -93,6 +94,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
 </body>
 </html>

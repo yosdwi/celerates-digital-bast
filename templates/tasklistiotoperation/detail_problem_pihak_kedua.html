@@ -15,23 +15,17 @@
             font-weight: bold;
             margin-bottom: 20px;
         }
-        .formula-header {
-            font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 15px;
-            margin-top: 30px;
-        }
-        .table-container {
+        .iot-problem-section .table-container {
             border: 2px solid #000;
             width: 100%;
             margin-bottom: 20px;
         }
-        table {
+        .iot-problem-section table {
             width: 100%;
             border-collapse: collapse;
             font-size: 12px;
         }
-        th {
+        .iot-problem-section th {
             background-color: #9BB5D6;
             color: #000;
             font-weight: bold;
@@ -40,7 +34,7 @@
             border: 1px solid #000;
             vertical-align: middle;
         }
-        td {
+        .iot-problem-section td {
             padding: 10px;
             border: 1px solid #000;
             text-align: left;
@@ -74,9 +68,8 @@
 <body>
     <!-- <div class="header">1. Detail problem yang ditangani oleh Pihak Kedua:</div> -->
 
-    <div class="formula-header">Formula</div>
-
-    <div class="table-container">
+    <div class="iot-problem-section">
+        <div class="table-container">
         <table>
             <thead>
                 <tr>
@@ -107,6 +100,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
 </body>
 </html>

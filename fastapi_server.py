@@ -2,6 +2,9 @@ import os
 import calendar
 import hashlib
 import secrets
+import sqlite3
+import json
+import uuid
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from typing import Optional, Dict
@@ -27,6 +30,68 @@ app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", sec
 app.mount("/static", StaticFiles(directory="static"), name="static")
 # app.mount("/admin/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+# SQLite database for generation plans
+DB_PATH = "generation_plans.db"
+
+def init_db():
+    """Initialize SQLite database for generation plans"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS generation_plans (
+            id TEXT PRIMARY KEY,
+            plan_data TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def save_generation_plan(plan_data: dict) -> str:
+    """Save generation plan to database and return plan_id"""
+    plan_id = str(uuid.uuid4())
+    plan_data['plan_id'] = plan_id
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO generation_plans (id, plan_data) VALUES (?, ?)',
+        (plan_id, json.dumps(plan_data))
+    )
+    conn.commit()
+    conn.close()
+    return plan_id
+
+def get_generation_plan(plan_id: str) -> Optional[dict]:
+    """Get generation plan from database"""
+    if not plan_id:
+        return None
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT plan_data FROM generation_plans WHERE id = ?', (plan_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return json.loads(row[0])
+    return None
+
+def update_generation_plan(plan_id: str, plan_data: dict):
+    """Update generation plan in database"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE generation_plans SET plan_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        (json.dumps(plan_data), plan_id)
+    )
+    conn.commit()
+    conn.close()
+
+# Initialize database on startup
+init_db()
 
 active_sessions: Dict[str, Dict] = {}
 
@@ -366,12 +431,10 @@ async def admin_index(request: Request):
 
     from datetime import datetime
 
-    # Get employee list for filter dropdown, needed for the attendance form in index.html
-    employee_table = config.NOCODB_TABLES.get("employee_data")
-    nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
-    employee_mapping = nocodb_employee.get_all_employees()
-    employee_list = list(employee_mapping.keys())
-    employee_roles = {emp_name: emp_info.get('role', '') for emp_name, emp_info in employee_mapping.items()}
+    # Skip employee data fetch on initial page load to improve performance
+    # Employee data will be fetched only when needed for actual reports
+    employee_list = []
+    employee_roles = {}
 
     return templates.TemplateResponse('index.html', {
         "request": request,
@@ -622,7 +685,9 @@ async def _generate_dev_pelaksanaan_page(request: Request, month_name: str):
         }
     ]
 
-    return templates.TemplateResponse('tasklistdeveloper/pelaksanaan_pekerjaan.html', {
+    # Render template as string instead of TemplateResponse for progressive generation
+    template = templates.get_template('tasklistdeveloper/pelaksanaan_pekerjaan.html')
+    return template.render({
         "request": request,
         "pelaksanaan_data": pelaksanaan_data,
         "month": month_name
@@ -687,7 +752,9 @@ async def _generate_dev_kualitas_data(request: Request, records: list, month_nam
     total_pencapaian = sum(int(record.get('Pencapaian', 0)) for record in records if record.get('Pencapaian'))
     avg_pencapaian = total_pencapaian // len(records) if records else 0
 
-    return templates.TemplateResponse('tasklistdeveloper/detail_aktivitas_kualitas_kode.html', {
+    # Render template as string instead of TemplateResponse for progressive generation
+    template = templates.get_template('tasklistdeveloper/detail_aktivitas_kualitas_kode.html')
+    return template.render({
         "request": request,
         "kualitas_kode_data": kualitas_data,
         "summary_pencapaian": str(avg_pencapaian),
@@ -724,7 +791,9 @@ async def _generate_dev_rilis_data(request: Request, records: list, month_name: 
     total_pencapaian = sum(int(record.get('Pencapaian', 0)) for record in records if record.get('Pencapaian'))
     avg_pencapaian = total_pencapaian // len(records) if records else 0
 
-    return templates.TemplateResponse('tasklistdeveloper/detail_aktivitas_waktu_rilis.html', {
+    # Render template as string instead of TemplateResponse for progressive generation
+    template = templates.get_template('tasklistdeveloper/detail_aktivitas_waktu_rilis.html')
+    return template.render({
         "request": request,
         "waktu_rilis_data": rilis_data,
         "summary_pencapaian": str(avg_pencapaian),
@@ -761,108 +830,14 @@ async def _generate_dev_support_data(request: Request, records: list, month_name
     total_pencapaian = sum(int(record.get('Pencapaian', 0)) for record in records if record.get('Pencapaian'))
     avg_pencapaian = total_pencapaian // len(records) if records else 0
 
-    return templates.TemplateResponse('tasklistdeveloper/detail_aktivitas_dukungan_support.html', {
+    # Render template as string instead of TemplateResponse for progressive generation
+    template = templates.get_template('tasklistdeveloper/detail_aktivitas_dukungan_support.html')
+    return template.render({
         "request": request,
         "dukungan_support_data": support_data,
         "summary_pencapaian": str(avg_pencapaian),
         "month": month_name
     })
-
-@app.get("/tasklistdevelopertest", response_class=HTMLResponse)
-async def tasklistdeveloper_test(request: Request, page: str = "pelaksanaan"):
-    """Test endpoint for task list developer templates with dummy data"""
-    if page == "pelaksanaan":
-        dummy_pelaksanaan_data = [
-            {"sla": "Kualitas Kode", "parameter": "95% fitur yang dirilis bebas dari bug mayor", "pencapaian": "100"},
-            {"sla": "Waktu Rilis", "parameter": "2 minggu untuk fitur minor dan selambatnya 4-6 minggu untuk fitur mayor,", "pencapaian": "100"},
-            {"sla": "Dukungan Support", "parameter": "95% permintaan dukungan diselesaikan dalam target waktu yang ditetapkan", "pencapaian": "100"}
-        ]
-
-        return templates.TemplateResponse('tasklistdeveloper/pelaksanaan_pekerjaan.html', {
-            "request": request,
-            "pelaksanaan_data": dummy_pelaksanaan_data
-        })
-
-    elif page == "kualitas":
-        dummy_kualitas_data = []
-        tasks = [
-            "Maintenance/Bugfix Health Check Service",
-            "Maintenance/Bugfix Health Check Service",
-            "Task Scheduler Module Health Check & Generate Batch",
-            "Refactoring worker & interface parsing hex fleetsight",
-            "OBSMS Get data speed GPS",
-            "Adjustment OBSMS GPS Speed, Pentaho TPMS Daily, Enhancement Asset Taking Digi - List & User Access",
-            "Maintenance Pentaho Feature Availability, OPA Manage License",
-            "Service OPA ST License Compare, Pentaho PA Daily MH02",
-            "Service OPA ST License Compare",
-            "Pentaho MH02 Replication Daily Shift & SCM, MH02 Api Last Connection",
-            "MH02 Api Last Connection Update",
-            "Pentaho Replication Production Detail, Bugfix Digi Asset Management",
-            "Pentaho dump opr MIR",
-            "Pentaho dump opr MIR",
-            "Maintenance Health Check",
-            "Enhance dashboard Digi Asset Taking detail asset by category"
-        ]
-
-        requestors = ["Adi Pranoto", "Adi Pranoto", "Adi Pranoto", "Adi Pranoto", "Adi Pranoto",
-                     "Sugiyanto", "Adi Pranoto", "Ifan Saputra", "Adi Pranoto", "Fauzan",
-                     "Adi Pranoto", "Adi Pranoto", "Adi Pranoto", "Adi Pranoto", "Adi Pranoto", "Sugiyanto"]
-
-        for i, task in enumerate(tasks):
-            dummy_kualitas_data.append({
-                "no": i + 1,
-                "task_list": task,
-                "requestor": requestors[i],
-                "pic": "Hanung Rizqi Widianto",
-                "status": "Closed",
-                "start_date": f"2026/1/{i+1}",
-                "end_date": f"2026/1/{i+1}",
-                "pencapaian": "100"
-            })
-
-        return templates.TemplateResponse('tasklistdeveloper/detail_aktivitas_kualitas_kode.html', {
-            "request": request,
-            "kualitas_kode_data": dummy_kualitas_data,
-            "summary_pencapaian": "100"
-        })
-
-    elif page == "rilis":
-        dummy_rilis_data = [
-            {"no": 1, "task_list": "Deployment Hardware prototype Rover MIR site BRCB", "requestor": "Bagas Eko P", "pic": "Ovianto", "status": "Closed", "start_date": "2026/1/15", "end_date": "2026/1/26", "pencapaian": "100"},
-            {"no": 2, "task_list": "Deployment Hardware GPS RTK on device MH02", "requestor": "Bagas Eko P", "pic": "Ovianto", "status": "Closed", "start_date": "2026/1/19", "end_date": "2026/1/21", "pencapaian": "100"},
-            {"no": 3, "task_list": "Deploy service send alert overspeed yang masih open via bot wa", "requestor": "Inky Danindra", "pic": "Aris Purnama", "status": "Closed", "start_date": "2026/1/12", "end_date": "2026/1/12", "pencapaian": "100"},
-            {"no": 4, "task_list": "Deploy Grup Telegram BRCG", "requestor": "Inky Danindra", "pic": "Aris Purnama", "status": "Closed", "start_date": "2026/1/22", "end_date": "2026/1/22", "pencapaian": "100"}
-        ]
-
-        return templates.TemplateResponse('tasklistdeveloper/detail_aktivitas_waktu_rilis.html', {
-            "request": request,
-            "waktu_rilis_data": dummy_rilis_data,
-            "summary_pencapaian": "100"
-        })
-
-    elif page == "support":
-        dummy_support_data = [
-            {"no": 1, "task_list": "Function import export data untuk instalasi aplikasi di perangkat user requester persiapan annual meeting", "requestor": "Ridhwan Wahyudi", "pic": "Muhammad Atsal Rizandri", "status": "Closed", "start_date": "2026/1/23", "end_date": "2026/1/23", "pencapaian": "100"},
-            {"no": 2, "task_list": "Laporan dokumentasi riset wearable untuk presentasi annual meeting", "requestor": "Ridhwan Wahyudi", "pic": "Muhammad Atsal Rizandri", "status": "Closed", "start_date": "2026/1/9", "end_date": "2026/1/13", "pencapaian": "100"},
-            {"no": 3, "task_list": "Maintenance Server JIEPPPSCU25011 (semua service mati)", "requestor": "Tim MS", "pic": "Aris Purnama", "status": "Closed", "start_date": "2026/1/19", "end_date": "2026/1/19", "pencapaian": "100"},
-            {"no": 4, "task_list": "Cek aliran data PM", "requestor": "Fauza", "pic": "Aris Purnama", "status": "Closed", "start_date": "2026/1/19", "end_date": "2026/1/19", "pencapaian": "100"},
-            {"no": 5, "task_list": "Cek aliran data mongodb", "requestor": "Lutfi", "pic": "Aris Purnama", "status": "Closed", "start_date": "2026/1/19", "end_date": "2026/1/19", "pencapaian": "100"},
-            {"no": 6, "task_list": "Membuat Dokumentasi service yang jalan", "requestor": "Fauzan", "pic": "Aris Purnama", "status": "Closed", "start_date": "2026/1/22", "end_date": "2026/1/22", "pencapaian": "100"},
-            {"no": 7, "task_list": "Maintenance Server BRCG storage penuh, enhancement script housekeeping", "requestor": "Tim MS", "pic": "Aris Purnama", "status": "Closed", "start_date": "2026/1/22", "end_date": "2026/1/22", "pencapaian": "100"},
-            {"no": 8, "task_list": "Troubleshooting KML Polygon di WEB Overspeed tidak Update", "requestor": "Tim MS", "pic": "Aris Purnama", "status": "Closed", "start_date": "2026/1/28", "end_date": "2026/1/28", "pencapaian": "100"},
-            {"no": 9, "task_list": "Troubleshooting WA BOT Tidak bisa jalan", "requestor": "Inky Danindra", "pic": "Aris Purnama", "status": "Closed", "start_date": "2026/1/29", "end_date": "2026/1/29", "pencapaian": "100"},
-            {"no": 10, "task_list": '"BRCB" Project MIR', "requestor": "Bagas Eko Prasetyo", "pic": "Ovianto", "status": "Closed", "start_date": "2026/1/19", "end_date": "2026/1/26", "pencapaian": "100"},
-            {"no": 11, "task_list": "MH02 - Troubleshoot WA BOT PM, datalog, dan auto reportig yang tiba-tiba berhenti", "requestor": "Bagas", "pic": "Muhammad Taufiq Azra H", "status": "Closed", "start_date": "2026/1/30", "end_date": "2026/1/30", "pencapaian": "100"}
-        ]
-
-        return templates.TemplateResponse('tasklistdeveloper/detail_aktivitas_dukungan_support.html', {
-            "request": request,
-            "dukungan_support_data": dummy_support_data,
-            "summary_pencapaian": "100"
-        })
-
-    else:
-        return await tasklistdeveloper_test(request, "pelaksanaan")
 
 @app.post("/report/tasklistiotoperation")
 async def generate_tasklistiotoperation_report(
@@ -944,7 +919,9 @@ async def _generate_iot_problem_page(request: Request, records: list, month_name
         }
     ]
 
-    return templates.TemplateResponse('tasklistiotoperation/detail_problem_pihak_kedua.html', {
+    # Render template as string instead of TemplateResponse for progressive generation
+    template = templates.get_template('tasklistiotoperation/detail_problem_pihak_kedua.html')
+    return template.render({
         "request": request,
         "problem_data": problem_data,
         "month": month_name
@@ -1011,7 +988,9 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
             "engineer_manage": engineer_manage
         })
 
-    return templates.TemplateResponse('tasklistiotoperation/detail_aktivitas_pihak_kedua.html', {
+    # Render template as string instead of TemplateResponse for progressive generation
+    template = templates.get_template('tasklistiotoperation/detail_aktivitas_pihak_kedua.html')
+    return template.render({
         "request": request,
         "aktivitas_data": aktivitas_data,
         "month": month_name
@@ -1063,7 +1042,9 @@ async def _generate_iot_aktivitas_fallback(request: Request, records: list, mont
             "engineer_manage": pic_str
         })
 
-    return templates.TemplateResponse('tasklistiotoperation/detail_aktivitas_pihak_kedua.html', {
+    # Render template as string instead of TemplateResponse for progressive generation
+    template = templates.get_template('tasklistiotoperation/detail_aktivitas_pihak_kedua.html')
+    return template.render({
         "request": request,
         "aktivitas_data": aktivitas_data,
         "month": month_name
@@ -1107,7 +1088,9 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
             "performance_penyelesaian_2": "99"
         })
 
-    return templates.TemplateResponse('tasklistiotoperation/detail_respon_resolution_time.html', {
+    # Render template as string instead of TemplateResponse for progressive generation
+    template = templates.get_template('tasklistiotoperation/detail_respon_resolution_time.html')
+    return template.render({
         "request": request,
         "respon_data": respon_data,
         "summary_percentage": "97.5",
@@ -1358,6 +1341,27 @@ async def generate_all_report(
     current_year = datetime.now().year
 
     try:
+        # Check if request comes from form submission (redirect to progressive generator immediately)
+        content_type = request.headers.get("content-type", "")
+        if "application/x-www-form-urlencoded" in content_type:
+            # Store basic info for progressive generator
+            month_names = {
+                1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+                5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+                9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+            }
+
+            request.session["progressive_generation"] = {
+                "type": type,
+                "month": month,
+                "year": current_year,
+                "month_name": month_names.get(month, str(month))
+            }
+
+            # Redirect to progressive generator immediately (no heavy processing)
+            return RedirectResponse(url="/admin/progressive-generator", status_code=303)
+
+        # Only do heavy processing for direct access (not form submission)
         html_sections = []
 
         timesheet_htmls = await _get_timesheet_html_sections(month, current_year, type, request)
@@ -1379,6 +1383,7 @@ async def generate_all_report(
         if attendance_html:
             html_sections.append(attendance_html)
 
+        # Direct access - return template
         return templates.TemplateResponse('all_report_template.html', {
             "request": request,
             "type": type,
@@ -1392,6 +1397,664 @@ async def generate_all_report(
 
     except Exception as e:
         raise HTTPException(500, f"Error generating comprehensive report: {str(e)}")
+
+
+@app.get("/admin/progressive-generator")
+async def show_progressive_generator(request: Request):
+    """Show progressive report generation page"""
+    gen_data = request.session.get("progressive_generation")
+
+    if not gen_data:
+        # No data, redirect back to admin
+        return RedirectResponse(url="/admin", status_code=303)
+
+    return templates.TemplateResponse('progressive_report_generator.html', {
+        "request": request,
+        "type": gen_data.get("type", ""),
+        "month": gen_data.get("month", 1),
+        "year": gen_data.get("year", 2024),
+        "month_name": gen_data.get("month_name", ""),
+        "datetime": datetime
+    })
+
+
+@app.post("/admin/report-editor")
+async def proceed_to_editor(request: Request):
+    """Transfer completed sections from progressive generator to editor"""
+    try:
+        # Get generation plan with completed sections
+        plan = request.session.get("generation_plan")
+        if not plan:
+            return RedirectResponse(url="/admin", status_code=303)
+
+        # Filter only completed sections with their generated content
+        completed_sections = []
+        for section_data in plan.get("sections", []):
+            if section_data["status"] == "completed" and "generated_content" in section_data:
+                # Use the actual generated content
+                content = section_data["generated_content"]
+                completed_sections.append({
+                    "type": content["type"],
+                    "title": content["title"],
+                    "content": content["content"],
+                    "employee_name": content.get("employee_name"),
+                    "section_type": content.get("section_type")
+                })
+
+        # Store in session for editor
+        request.session["report_data"] = {
+            "type": plan["type"],
+            "month": plan["month"],
+            "year": plan["year"],
+            "html_sections": completed_sections,
+            "logo_pama_url": '/admin/static/img/logo_pama.png',
+            "logo_celerates_url": '/admin/static/img/logo_celerates.jpg'
+        }
+
+        return RedirectResponse(url="/admin/report-editor", status_code=303)
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/admin/report-editor")
+async def show_report_editor(request: Request, plan_id: str = Query(None)):
+    """Show report editor page with generated data"""
+    if plan_id:
+        # Get data from SQLite database using plan_id
+        plan = get_generation_plan(plan_id)
+        if plan:
+            # Build completed sections data for editor using stored content
+            completed_sections = []
+            for section in plan.get("sections", []):
+                if section.get("status") == "completed":
+                    # Use stored content instead of regenerating
+                    stored_content = section.get("generated_content")
+                    if stored_content:
+                        completed_sections.append({
+                            "type": stored_content.get("type"),
+                            "title": stored_content.get("title"),
+                            "content": stored_content.get("content"),
+                            "employee_name": stored_content.get("employee_name")  # Add employee_name
+                        })
+                    else:
+                        # Fallback for sections without stored content
+                        completed_sections.append({
+                            "type": section.get("type"),
+                            "title": section.get("title"),
+                            "content": f"<div class='section-placeholder'>Section {section.get('title')} - No stored content found</div>",
+                            "employee_name": section.get("employee_name")  # Add employee_name from section data
+                        })
+
+            report_data = {
+                "type": plan.get("type"),
+                "month": plan.get("month"),
+                "year": plan.get("year"),
+                "html_sections": completed_sections,
+                "logo_pama_url": '/admin/static/img/logo_pama.png',
+                "logo_celerates_url": '/admin/static/img/logo_celerates.jpg'
+            }
+        else:
+            # No plan found, redirect back to admin
+            return RedirectResponse(url="/admin", status_code=303)
+    else:
+        # Fallback to session data (for backward compatibility)
+        report_data = request.session.get("report_data")
+        if not report_data:
+            # No data, redirect back to admin
+            return RedirectResponse(url="/admin", status_code=303)
+
+    return templates.TemplateResponse('report_editor.html', {
+        "request": request,
+        "type": report_data.get("type"),
+        "month": report_data.get("month"),
+        "year": report_data.get("year"),
+        "html_sections": report_data.get("html_sections", []),
+        "logo_pama_url": report_data.get("logo_pama_url"),
+        "logo_celerates_url": report_data.get("logo_celerates_url"),
+        "datetime": datetime
+    })
+
+
+@app.post("/api/generate/plan")
+async def generate_plan(
+    request: Request,
+    type: str = Form(...),
+    month: int = Form(...)
+):
+    """Calculate total sections needed for report generation"""
+    try:
+        current_year = datetime.now().year
+
+        # Get employee count with role filter
+        employee_table = config.NOCODB_TABLES.get("employee_data")
+        nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
+
+        if type == "iotoperation":
+            role_filter = "IoT Operations"
+        elif type == "developer":
+            role_filter = "Developer"
+        else:
+            role_filter = None
+
+        employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
+
+        # Calculate sections
+        sections_plan = []
+        section_id = 1
+
+        # Main Timesheet section header
+        sections_plan.append({
+            "id": section_id,
+            "type": "timesheet_header",
+            "title": "1. Timesheet",
+            "status": "pending"
+        })
+        section_id += 1
+
+        # Timesheet sections (one per employee)
+        timesheet_counter = 1
+        for emp_name, emp_info in employee_mapping.items():
+            sections_plan.append({
+                "id": section_id,
+                "type": "timesheet",
+                "title": f"1.{timesheet_counter}. Timesheet - {emp_name}",
+                "employee_name": emp_name,
+                "status": "pending"
+            })
+            section_id += 1
+            timesheet_counter += 1
+
+        # Main Task List section header
+        sections_plan.append({
+            "id": section_id,
+            "type": "tasklist_header",
+            "title": "2. Task List",
+            "status": "pending"
+        })
+        section_id += 1
+
+        # Tasklist sections
+        if type == "iotoperation":
+            tasklist_sections = [
+                {"title": "2.1. IoT Operations - Problem Report", "section_type": "problem"},
+                {"title": "2.2. IoT Operations - Aktivitas Report", "section_type": "aktivitas"}
+            ]
+        else:
+            tasklist_sections = [
+                {"title": "2.1. Developer - Kualitas Kode", "section_type": "kualitas"},
+                {"title": "2.2. Developer - Waktu Rilis", "section_type": "waktu"},
+                {"title": "2.3. Developer - Dukungan Support", "section_type": "dukungan"}
+            ]
+
+        for tasklist in tasklist_sections:
+            sections_plan.append({
+                "id": section_id,
+                "type": "tasklist",
+                "title": tasklist["title"],
+                "section_type": tasklist["section_type"],
+                "status": "pending"
+            })
+            section_id += 1
+
+        # Evidence section
+        sections_plan.append({
+            "id": section_id,
+            "type": "evidence",
+            "title": "3. Evidence Aktivitas",
+            "status": "pending"
+        })
+        section_id += 1
+
+        # Main Attendance section header
+        sections_plan.append({
+            "id": section_id,
+            "type": "attendance_header",
+            "title": "4. Attendance",
+            "status": "pending"
+        })
+        section_id += 1
+
+        # Attendance section (one per employee)
+        attendance_counter = 1
+        for emp_name, emp_info in employee_mapping.items():
+            sections_plan.append({
+                "id": section_id,
+                "type": "attendance",
+                "title": f"4.{attendance_counter}. Attendance - {emp_name}",
+                "employee_name": emp_name,
+                "status": "pending"
+            })
+            section_id += 1
+            attendance_counter += 1
+
+        # Store plan in SQLite database
+        plan_data = {
+            "type": type,
+            "month": month,
+            "year": current_year,
+            "sections": sections_plan,
+            "total": len(sections_plan),
+            "completed": 0,
+            "failed": 0
+        }
+
+        plan_id = save_generation_plan(plan_data)
+
+        return {
+            "success": True,
+            "plan_id": plan_id,
+            "total_sections": len(sections_plan),
+            "sections": sections_plan
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post("/api/generate/section")
+async def generate_section(
+    request: Request,
+    section_id: int = Form(...),
+    plan_id: str = Form(...)
+):
+    """Generate a specific section by ID"""
+    try:
+        # Get plan from SQLite database
+        plan = get_generation_plan(plan_id)
+        if not plan:
+            return {
+                "success": False,
+                "section_id": section_id,
+                "error": f"No generation plan found with ID: {plan_id}"
+            }
+
+        # Find section in plan
+        section = None
+        for s in plan["sections"]:
+            if s["id"] == section_id:
+                section = s
+                break
+
+        if not section:
+            return {
+                "success": False,
+                "section_id": section_id,
+                "error": f"Section {section_id} not found"
+            }
+
+        # Generate section based on type
+        section_content = None
+
+        if section["type"] == "timesheet_header":
+            section_content = {
+                'type': 'timesheet_header',
+                'title': '1. Timesheet',
+                'content': ''  # Empty content since title already shows in page header
+            }
+
+        elif section["type"] == "timesheet":
+            section_content = await _generate_single_timesheet_section(
+                section["employee_name"], plan["month"], plan["year"], plan["type"], request
+            )
+            if section_content:
+                section_content["title"] = section["title"]  # Use plan title
+
+        elif section["type"] == "tasklist_header":
+            section_content = {
+                'type': 'tasklist_header',
+                'title': '2. Task List',
+                'content': ''  # Empty content since title already shows in page header
+            }
+
+        elif section["type"] == "tasklist":
+            section_content = await _generate_single_tasklist_section(
+                section["section_type"], plan["month"], plan["type"], request
+            )
+            if section_content:
+                section_content["title"] = section["title"]  # Use plan title
+
+        elif section["type"] == "evidence":
+            evidence_type_param = "iotoperations" if plan["type"] == "iotoperation" else "developer"
+            section_content = await _get_evidence_html_section(evidence_type_param, plan["month"], request)
+
+        elif section["type"] == "attendance_header":
+            section_content = {
+                'type': 'attendance_header',
+                'title': '4. Attendance',
+                'content': ''  # Empty content since title already shows in page header
+            }
+
+        elif section["type"] == "attendance":
+            section_content = await _generate_single_attendance_section(
+                section["employee_name"], plan["month"], plan["year"], plan["type"], request
+            )
+            if section_content:
+                section_content["title"] = section["title"]  # Use plan title
+
+        if section_content:
+            # Update section status in plan and store content
+            for s in plan["sections"]:
+                if s["id"] == section_id:
+                    s["status"] = "completed"
+                    # Store basic info only to avoid JSON serialization issues
+                    if isinstance(section_content, dict):
+                        s["generated_content"] = {
+                            "type": section_content.get("type", "unknown"),
+                            "title": section_content.get("title", ""),
+                            "content": str(section_content.get("content", "")),  # Convert to string
+                            "employee_name": section_content.get("employee_name", "")
+                        }
+                    else:
+                        s["generated_content"] = {"type": "unknown", "title": "Generated", "content": str(section_content), "employee_name": ""}
+                    break
+
+            plan["completed"] += 1
+            update_generation_plan(plan_id, plan)
+
+            return {
+                "success": True,
+                "section_id": section_id,
+                "section": section_content,
+                "progress": {
+                    "completed": plan["completed"],
+                    "total": plan["total"],
+                    "percentage": round((plan["completed"] / plan["total"]) * 100, 2)
+                }
+            }
+        else:
+            # Mark as failed
+            for s in plan["sections"]:
+                if s["id"] == section_id:
+                    s["status"] = "failed"
+                    break
+
+            plan["failed"] += 1
+            update_generation_plan(plan_id, plan)
+
+            return {
+                "success": False,
+                "section_id": section_id,
+                "error": "Failed to generate section content"
+            }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "section_id": section_id,
+            "error": str(e)
+        }
+
+
+@app.post("/api/generate/retry")
+async def retry_section(
+    request: Request,
+    section_id: int = Form(...),
+    plan_id: str = Form(...)
+):
+    """Retry generating a failed section"""
+    try:
+        # Get plan from SQLite database
+        plan = get_generation_plan(plan_id)
+        if not plan:
+            return {
+                "success": False,
+                "section_id": section_id,
+                "error": f"No generation plan found with ID: {plan_id}"
+            }
+
+        # Reset section status to pending
+        for s in plan["sections"]:
+            if s["id"] == section_id:
+                s["status"] = "pending"
+                break
+
+        plan["failed"] = max(0, plan["failed"] - 1)
+        update_generation_plan(plan_id, plan)
+
+        # Re-attempt generation
+        return await generate_section(request, section_id)
+
+    except Exception as e:
+        return {
+            "success": False,
+            "section_id": section_id,
+            "error": str(e)
+        }
+
+
+# Export PDF endpoint removed - using browser print instead
+
+
+# Helper functions for progressive generation
+async def _generate_single_timesheet_section(employee_name: str, month: int, year: int, report_type: str, request: Request):
+    """Generate timesheet section for single employee"""
+    try:
+        # Get employee info first
+        employee_table = config.NOCODB_TABLES.get("employee_data")
+        nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
+
+        role_filter = "IoT Operations" if report_type == "iotoperation" else "Developer"
+        employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
+
+        if employee_name not in employee_mapping:
+            return None
+
+        employee_info = employee_mapping[employee_name]
+        single_employee_data = await _generate_single_employee_timesheet(employee_name, employee_info, month, year)
+
+        if single_employee_data and single_employee_data.get('timesheet_rows'):
+            html_content = await _render_single_timesheet_html(single_employee_data, request)
+            # Ensure we return only JSON-serializable data
+            return {
+                'type': 'timesheet',
+                'title': f'Timesheet {employee_name}',
+                'employee_name': str(employee_name).upper(),
+                'content': str(html_content)  # Ensure it's a string
+            }
+
+        return None
+
+    except Exception as e:
+        print(f"Error generating timesheet for {employee_name}: {e}")
+        return None
+
+
+async def _generate_single_tasklist_section(section_type: str, month: int, report_type: str, request: Request):
+    """Generate single tasklist section"""
+    try:
+        if report_type == "iotoperation":
+            html_content = await _get_iot_tasklist_html_content(month, section_type, request)
+        else:
+            html_content = await _get_developer_tasklist_html_content(month, section_type, request)
+
+        if html_content:
+            title_map = {
+                "problem": "2.1. IoT Operations - Problem Report",
+                "aktivitas": "2.2. IoT Operations - Aktivitas Report",
+                "kualitas": "2.1. Developer - Kualitas Kode",
+                "waktu": "2.2. Developer - Waktu Rilis",
+                "dukungan": "2.3. Developer - Dukungan Support"
+            }
+
+            return {
+                'type': 'tasklist',
+                'title': title_map.get(section_type, f"Tasklist - {section_type}"),
+                'section_type': str(section_type),
+                'content': str(html_content)  # Ensure it's a string
+            }
+
+        return None
+
+    except Exception as e:
+        print(f"Error generating tasklist section {section_type}: {e}")
+        return None
+
+
+async def _generate_single_attendance_section(employee_name: str, month: int, year: int, report_type: str, request: Request):
+    """Generate attendance section for single employee"""
+    try:
+        # Get employee info
+        employee_table = config.NOCODB_TABLES.get("employee_data")
+        nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
+
+        role_filter = "IoT Operations" if report_type == "iotoperation" else "Developer"
+        employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
+
+        if employee_name not in employee_mapping:
+            return None
+
+        # Generate attendance data for single employee
+        single_attendance_data = await _generate_single_employee_attendance(employee_name, employee_mapping, month, year, request)
+
+        if single_attendance_data:
+            return {
+                'type': 'attendance',
+                'title': f'Attendance {employee_name}',
+                'employee_name': str(employee_name),
+                'content': str(single_attendance_data)  # Ensure it's a string
+            }
+
+        return None
+
+    except Exception as e:
+        print(f"Error generating attendance for {employee_name}: {e}")
+        return None
+
+
+async def _generate_single_employee_attendance(employee_name: str, employee_mapping: dict, month: int, year: int, request: Request):
+    """Generate attendance HTML for single employee"""
+    try:
+        attendance_table = config.NOCODB_TABLES.get("attendance")
+        nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
+
+        start_date, end_date = get_dynamic_month_dates(year, month)
+
+        # Get attendance data for this employee
+        attendance_data = []
+        emp_info = employee_mapping[employee_name]
+
+        # Query attendance records for this employee (without date filter in query)
+        where_clause = f"(Name,like,%{employee_name.strip().title()}%)"
+        response = nocodb_attendance.get_records(limit=2000, where=where_clause)
+        records = response.get('list', []) if response else []
+
+        if records:
+            # Process attendance data for this employee, filtering by date in Python
+            for record in records:
+                rec_date_str = record.get('Date')
+                if not rec_date_str:
+                    continue
+                rec_date = datetime.strptime(rec_date_str, '%Y-%m-%d').date()
+                if start_date.date() <= rec_date <= end_date.date():
+                    attendance_data.append({
+                        'nrp': emp_info.get('NRP', ''),
+                        'nama': employee_name,
+                        'tanggal_kehadiran': rec_date.strftime('%d/%m/%Y'),
+                        'jam_kehadiran': format_attendance_time(record.get('Start Time'), record.get('End Time'))
+                    })
+
+            # Sort attendance data by date like the original function
+            attendance_data.sort(key=lambda x: datetime.strptime(x['tanggal_kehadiran'], '%d/%m/%Y'))
+
+            # Render template for this employee
+            template = templates.get_template('attendance_report_template.html')
+            html_content = template.render(
+                request=request,
+                reports=[{
+                    'nrp': emp_info.get('NRP', ''),
+                    'nama': employee_name.upper(),
+                    'attendance_rows': attendance_data
+                }],
+                periode=f"{month}/{year}",
+                dicetak=datetime.now().strftime('%d/%m/%Y'),
+                logo_url='/admin/static/img/logo_pama.png'
+            )
+
+            return html_content
+
+        return None
+
+    except Exception as e:
+        print(f"Error generating attendance for {employee_name}: {e}")
+        return None
+
+
+async def _get_iot_tasklist_html_content(month: int, section_type: str, request: Request):
+    """Generate IoT tasklist HTML content for specific section"""
+    try:
+        indonesian_months = {
+            1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+            5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+            9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+        }
+        month_name = indonesian_months[month]
+
+        table_id = config.NOCODB_TABLES.get("tasklist_iot")
+        if not table_id:
+            return ""
+
+        nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
+        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
+        response = nocodb.get_records(limit=2000, where=where_clause)
+        records = response.get('list', []) if response else []
+
+        if section_type == "problem":
+            return await _generate_iot_problem_page(request, records, month_name)
+        else:  # aktivitas
+            return await _generate_iot_aktivitas_fallback(request, records, month_name)
+
+    except Exception as e:
+        print(f"Error generating IoT tasklist section {section_type}: {e}")
+        return ""
+
+
+async def _get_developer_tasklist_html_content(month: int, section_type: str, request: Request):
+    """Generate Developer tasklist HTML content for specific section"""
+    try:
+        indonesian_months = {
+            1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+            5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+            9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+        }
+        month_name = indonesian_months[month]
+
+        table_id = config.NOCODB_TABLES.get("tasklist_developer")
+        if not table_id:
+            return ""
+
+        nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
+
+        kategori_mapping = {
+            "kualitas": "Kualitas Kode",
+            "waktu": "Waktu Rilis",
+            "dukungan": "Dukungan dan Support"
+        }
+
+        kategori_name = kategori_mapping.get(section_type)
+        if not kategori_name:
+            return ""
+
+        where_clause = f"(Month,eq,{month_name})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
+        response = nocodb.get_records(limit=2000, where=where_clause)
+        records = response.get('list', []) if response else []
+
+        if section_type == "kualitas":
+            return await _generate_dev_kualitas_data(request, records, month_name)
+        elif section_type == "waktu":
+            return await _generate_dev_waktu_data(request, records, month_name)
+        elif section_type == "dukungan":
+            return await _generate_dev_dukungan_data(request, records, month_name)
+
+        return ""
+
+    except Exception as e:
+        print(f"Error generating Developer tasklist section {section_type}: {e}")
+        return ""
+
 
 async def _get_timesheet_html_sections(month: int, year: int, report_type: str, request: Request):
     """Get timesheet HTML for each employee separately, filtered by role"""
@@ -1663,7 +2326,7 @@ async def _get_evidence_html_section(evidence_type: str, month: int, request: Re
     table_key = "tasklist_iot" if evidence_type == "iotoperations" else "tasklist"
     table_id = config.NOCODB_TABLES.get(table_key)
     if not table_id:
-        return {'type': 'evidence', 'title': 'Evidence Aktivitas', 'content': '<div>Evidence table not configured.</div>'}
+        return {'type': 'evidence', 'title': '3. Evidence Aktivitas', 'content': '<div>Evidence table not configured.</div>'}
 
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
     where_clause = f"(Month,eq,{month_name})~and(Evidence Task,notnull)"
@@ -1708,8 +2371,8 @@ async def _get_evidence_html_section(evidence_type: str, month: int, request: Re
 
     return {
         'type': 'evidence',
-        'title': 'Evidence Aktivitas',
-        'content': isolated_content
+        'title': '3. Evidence Aktivitas',
+        'content': str(isolated_content)  # Ensure it's a string
     }
 
 async def _get_attendance_html_section(month: int, year: int, report_type: str, request: Request):
@@ -1786,7 +2449,7 @@ async def _get_attendance_html_section(month: int, year: int, report_type: str, 
 
             return {
                 'type': 'attendance',
-                'title': 'PAMA Attendance Report',
+                'title': '4. PAMA Attendance Report',
                 'content': clean_content
             }
         except Exception as e:
@@ -1895,7 +2558,7 @@ async def export_to_pdf_weasy(
         except:
             pass
 
-        filename = f"{type.title()}_Report_{month}_{year}.pdf"
+        filename = f"{context_data['type'].title()}_Report_{context_data['month']}_{context_data['year']}.pdf"
 
         return Response(
             content=pdf_bytes,

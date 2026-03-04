@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Progressive Report Generator | Digital BAST</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="/admin/static/css/admin_style.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--light-color);
+            font-feature-settings: 'cv11', 'ss01';
+            font-variation-settings: 'opsz' 32;
+        }
+
+        /* Progress Panel */
+        .progress-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: var(--sidebar-width);
+            height: 100vh;
+            background: var(--white-color);
+            border-right: 1px solid var(--gray-light);
+            z-index: 1000;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .progress-header {
+            padding: 1.5rem;
+            background: linear-gradient(180deg, var(--dark-color) 0%, var(--dark-secondary) 100%);
+            color: var(--white-color);
+            position: sticky;
+            top: 0;
+            z-index: 1001;
+            border-radius: 0;
+        }
+
+        .progress-header h4 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+        }
+
+        .overall-progress {
+            background: rgba(255,255,255,0.15);
+            border-radius: var(--border-radius);
+            padding: 1rem;
+            margin-top: 1rem;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .overall-progress .progress {
+            height: 6px;
+            background: rgba(255,255,255,0.2);
+            border-radius: var(--border-radius-sm);
+            overflow: hidden;
+        }
+
+        .overall-progress .progress-bar {
+            background: var(--success-color);
+            border-radius: var(--border-radius-sm);
+            transition: var(--transition);
+        }
+
+        .progress-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+            opacity: 0.9;
+        }
+
+        /* Section List */
+        .sections-list {
+            padding: 1.5rem;
+        }
+
+        .section-item {
+            display: flex;
+            align-items: center;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            border-radius: var(--border-radius-sm);
+            background: var(--white-color);
+            border: 1px solid var(--gray-light);
+            border-left: 4px solid var(--gray-light);
+            transition: var(--transition);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .section-item.pending {
+            border-left-color: var(--gray-color);
+            background: var(--light-color);
+        }
+
+        .section-item.loading {
+            border-left-color: var(--primary-color);
+            background: var(--primary-light);
+            animation: pulse 1.5s ease-in-out infinite alternate;
+            box-shadow: var(--shadow-md);
+        }
+
+        .section-item.completed {
+            border-left-color: var(--success-color);
+            background: #ecfdf5;
+        }
+
+        .section-item.failed {
+            border-left-color: var(--danger-color);
+            background: #fef2f2;
+        }
+
+        @keyframes pulse {
+            from { opacity: 0.6; }
+            to { opacity: 1; }
+        }
+
+        .section-icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+
+        .section-icon.pending {
+            background: #6c757d;
+            color: white;
+        }
+
+        .section-icon.loading {
+            background: #007bff;
+            color: white;
+        }
+
+        .section-icon.completed {
+            background: #28a745;
+            color: white;
+        }
+
+        .section-icon.failed {
+            background: #dc3545;
+            color: white;
+        }
+
+        .section-title {
+            flex-grow: 1;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .section-actions {
+            display: flex;
+            gap: 5px;
+        }
+
+        .btn-retry {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+            line-height: 1.4;
+            border-radius: var(--border-radius-sm);
+            transition: var(--transition);
+        }
+
+        /* Live Preview Area */
+        .preview-area {
+            margin-left: var(--sidebar-width);
+            padding: 1.5rem;
+            background: var(--light-color);
+            min-height: 100vh;
+        }
+
+        .page-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--gray-color);
+            background: var(--white-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--gray-light);
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 1.5rem;
+            color: var(--gray-light);
+        }
+
+        .empty-state h5 {
+            color: var(--dark-color);
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        /* Responsive design */
+        @media (max-width: 1200px) {
+            .progress-panel {
+                width: 260px;
+            }
+            .preview-area {
+                margin-left: 260px;
+            }
+        }
+
+        @media (max-width: 992px) {
+            .progress-panel {
+                width: 240px;
+            }
+            .preview-area {
+                margin-left: 240px;
+            }
+        }
+
+        /* A4 Page Simulation */
+        .page {
+            background: white;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            position: relative;
+            overflow: hidden;
+            animation: slideInUp 0.5s ease-out;
+        }
+
+        @keyframes slideInUp {
+            from {
+                transform: translateY(30px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        /* A4 Portrait: 210×297mm */
+        .page.portrait {
+            width: 794px;
+            min-height: 1123px;
+            padding: 40px;
+        }
+
+        /* A4 Landscape: 297×210mm */
+        .page.landscape {
+            width: 1123px;
+            min-height: 794px;
+            padding: 30px 40px;
+        }
+
+        /* Page labels */
+        .page::before {
+            content: attr(data-page);
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            background: #007bff;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        /* Control buttons */
+        .control-buttons {
+            position: sticky;
+            bottom: 1.5rem;
+            background: var(--white-color);
+            padding: 1.5rem;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-lg);
+            margin: 1.5rem 0;
+            border: 1px solid var(--gray-light);
+        }
+
+        .control-buttons .btn {
+            font-weight: 600;
+            font-size: 0.875rem;
+            padding: 0.75rem 1rem;
+            border-radius: var(--border-radius-sm);
+            transition: var(--transition);
+            letter-spacing: -0.01em;
+            margin-bottom: 0.5rem;
+        }
+
+        .control-buttons .btn-success {
+            background: linear-gradient(135deg, var(--success-color) 0%, #059669 100%);
+            border: none;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .control-buttons .btn-success:hover {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .control-buttons .btn-primary {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+            border: none;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .control-buttons .btn-primary:hover {
+            background: linear-gradient(135deg, var(--primary-dark) 0%, #312e81 100%);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .control-buttons .btn-warning {
+            background: linear-gradient(135deg, var(--warning-color) 0%, #d97706 100%);
+            border: none;
+            color: var(--white-color);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .control-buttons .btn-warning:hover {
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .control-buttons .btn-outline-secondary {
+            color: var(--gray-color);
+            border-color: var(--gray-light);
+            background: transparent;
+        }
+
+        .control-buttons .btn-outline-secondary:hover {
+            background: var(--light-color);
+            border-color: var(--gray-color);
+            color: var(--dark-color);
+            transform: translateY(-1px);
+        }
+
+        /* Loading spinner for sections */
+        .section-loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Status badges */
+        .status-badge {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-badge.pending {
+            background: #6c757d;
+            color: white;
+        }
+
+        .status-badge.loading {
+            background: #007bff;
+            color: white;
+        }
+
+        .status-badge.completed {
+            background: #28a745;
+            color: white;
+        }
+
+        .status-badge.failed {
+            background: #dc3545;
+            color: white;
+        }
+
+        /* Error message styling */
+        .error-message {
+            font-size: 11px;
+            color: #dc3545;
+            margin-top: 5px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Progress Panel -->
+    <div class="progress-panel">
+        <div class="progress-header">
+            <h4><i class="bi bi-file-text me-2"></i>Digital BAST</h4>
+            <small>{{ "IoT Operations" if type == "iotoperation" else "Developer" }} - {{ month_name }} {{ year }}</small>
+
+            <div class="overall-progress">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <small>Progres Laporan</small>
+                    <small id="progress-text">0%</small>
+                </div>
+                <div class="progress">
+                    <div class="progress-bar" id="overall-progress-bar" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div class="progress-stats">
+                    <span><i class="bi bi-clock"></i> <span id="pending-count">0</span> Pending</span>
+                    <span><i class="bi bi-check-circle"></i> <span id="completed-count">0</span> Done</span>
+                    <span><i class="bi bi-x-circle"></i> <span id="failed-count">0</span> Failed</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="sections-list" id="sections-list">
+            <!-- Sections will be populated by JavaScript -->
+        </div>
+
+        <!-- Control buttons -->
+        <div class="control-buttons">
+            <button class="btn btn-success btn-sm w-100 mb-2" id="start-generation-btn">
+                <i class="bi bi-play-fill me-1"></i>Buat Laporan
+            </button>
+            <button class="btn btn-warning btn-sm w-100 mb-2" id="pause-generation-btn" style="display: none;">
+                <i class="bi bi-pause-fill me-1"></i>Jeda
+            </button>
+            <button class="btn btn-primary btn-sm w-100 mb-2" id="proceed-to-editor-btn" style="display: none;">
+                <i class="bi bi-pencil me-1"></i>Edit Laporan
+            </button>
+            <button class="btn btn-outline-secondary btn-sm w-100" onclick="backToAdmin()">
+                <i class="bi bi-arrow-left me-1"></i>Kembali
+            </button>
+        </div>
+    </div>
+
+    <!-- Live Preview Area -->
+    <div class="preview-area">
+        <div class="page-container">
+            <div id="empty-state" class="empty-state">
+                <i class="bi bi-file-earmark-text"></i>
+                <h5>Siap Membuat Laporan</h5>
+                <p>Klik "Buat Laporan" untuk memulai proses pembuatan dokumen Digital BAST.</p>
+            </div>
+
+            <div id="preview-container">
+                <!-- Generated sections will appear here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Global state
+        let generationState = {
+            type: "{{ type }}",
+            month: parseInt("{{ month }}"),
+            year: parseInt("{{ year }}"),
+            plan_id: null,
+            sections: [],
+            currentSectionIndex: 0,
+            isGenerating: false,
+            isPaused: false,
+            completedSections: []
+        };
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeGeneration();
+        });
+
+        async function initializeGeneration() {
+            try {
+                // First, get the generation plan
+                const planResponse = await fetch('/api/generate/plan', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        type: generationState.type,
+                        month: generationState.month
+                    })
+                });
+
+                const planData = await planResponse.json();
+
+                if (planData.success) {
+                    generationState.plan_id = planData.plan_id;
+                    generationState.sections = planData.sections;
+                    renderSectionsList();
+                    updateProgress();
+                } else {
+                    alert('Failed to create generation plan: ' + planData.error);
+                }
+
+            } catch (error) {
+                console.error('Error initializing generation:', error);
+                alert('Error initializing generation: ' + error.message);
+            }
+        }
+
+        function renderSectionsList() {
+            const listContainer = document.getElementById('sections-list');
+            listContainer.innerHTML = '';
+
+            generationState.sections.forEach((section, index) => {
+                const sectionElement = createSectionElement(section, index);
+                listContainer.appendChild(sectionElement);
+            });
+        }
+
+        function createSectionElement(section, index) {
+            const div = document.createElement('div');
+            div.className = `section-item ${section.status}`;
+            div.id = `section-${section.id}`;
+
+            let icon = '';
+            switch (section.status) {
+                case 'pending': icon = '<i class="bi bi-clock"></i>'; break;
+                case 'loading': icon = '<div class="section-loading"></div>'; break;
+                case 'completed': icon = '<i class="bi bi-check"></i>'; break;
+                case 'failed': icon = '<i class="bi bi-x"></i>'; break;
+            }
+
+            let actions = '';
+            if (section.status === 'failed') {
+                actions = `<button class="btn btn-outline-danger btn-retry" onclick="retrySection(${section.id})">
+                              <i class="bi bi-arrow-clockwise"></i> Retry
+                           </button>`;
+            }
+
+            div.innerHTML = `
+                <div class="section-icon ${section.status}">
+                    ${icon}
+                </div>
+                <div class="section-title">
+                    ${section.title}
+                    ${section.status === 'failed' ? '<div class="error-message">Generation failed</div>' : ''}
+                </div>
+                <div class="section-actions">
+                    <span class="status-badge ${section.status}">${section.status}</span>
+                    ${actions}
+                </div>
+            `;
+
+            return div;
+        }
+
+        async function startGeneration() {
+            if (generationState.isGenerating && !generationState.isPaused) return;
+
+            generationState.isGenerating = true;
+            generationState.isPaused = false;
+
+            document.getElementById('start-generation-btn').style.display = 'none';
+            document.getElementById('pause-generation-btn').style.display = 'block';
+            document.getElementById('empty-state').style.display = 'none';
+
+            await processNextSection();
+        }
+
+        async function processNextSection() {
+            if (!generationState.isGenerating || generationState.isPaused) return;
+
+            // Find next pending section
+            const nextSection = generationState.sections.find(s => s.status === 'pending');
+
+            if (!nextSection) {
+                // All sections completed or failed
+                completeGeneration();
+                return;
+            }
+
+            // Update section status to loading
+            nextSection.status = 'loading';
+            updateSectionDisplay(nextSection);
+            updateProgress();
+
+            try {
+                // Generate the section
+                const response = await fetch('/api/generate/section', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        section_id: nextSection.id,
+                        plan_id: generationState.plan_id
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Section generated successfully
+                    nextSection.status = 'completed';
+                    generationState.completedSections.push(result.section);
+
+                    // Add to live preview
+                    addSectionToPreview(result.section);
+
+                    // Store in browser storage as backup
+                    localStorage.setItem('progressiveGeneration', JSON.stringify({
+                        sections: generationState.sections,
+                        completedSections: generationState.completedSections
+                    }));
+
+                } else {
+                    // Section failed
+                    nextSection.status = 'failed';
+                    nextSection.error = result.error;
+                }
+
+                updateSectionDisplay(nextSection);
+                updateProgress();
+
+                // Continue with next section after a brief pause
+                setTimeout(() => processNextSection(), 1000);
+
+            } catch (error) {
+                nextSection.status = 'failed';
+                nextSection.error = error.message;
+                updateSectionDisplay(nextSection);
+                updateProgress();
+
+                // Continue with next section
+                setTimeout(() => processNextSection(), 1000);
+            }
+        }
+
+        function addSectionToPreview(section) {
+            const previewContainer = document.getElementById('preview-container');
+
+            // Determine orientation based on section type
+            let orientation = 'portrait';
+            if (section.type === 'timesheet' ||
+                (section.type === 'tasklist' && (section.section_type === 'problem' || section.section_type === 'aktivitas'))) {
+                orientation = 'landscape';
+            }
+
+            const pageElement = document.createElement('div');
+            pageElement.className = `page ${orientation}`;
+            pageElement.setAttribute('data-page', section.title);
+            pageElement.innerHTML = section.content;
+
+            previewContainer.appendChild(pageElement);
+
+            // Scroll to the new section
+            pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function updateSectionDisplay(section) {
+            const sectionElement = document.getElementById(`section-${section.id}`);
+            if (sectionElement) {
+                // Update classes
+                sectionElement.className = `section-item ${section.status}`;
+
+                // Update icon
+                const iconElement = sectionElement.querySelector('.section-icon');
+                iconElement.className = `section-icon ${section.status}`;
+
+                let iconHTML = '';
+                switch (section.status) {
+                    case 'pending': iconHTML = '<i class="bi bi-clock"></i>'; break;
+                    case 'loading': iconHTML = '<div class="section-loading"></div>'; break;
+                    case 'completed': iconHTML = '<i class="bi bi-check"></i>'; break;
+                    case 'failed': iconHTML = '<i class="bi bi-x"></i>'; break;
+                }
+                iconElement.innerHTML = iconHTML;
+
+                // Update status badge and actions
+                const statusBadge = sectionElement.querySelector('.status-badge');
+                statusBadge.className = `status-badge ${section.status}`;
+                statusBadge.textContent = section.status;
+
+                // Add retry button for failed sections
+                const actionsContainer = sectionElement.querySelector('.section-actions');
+                if (section.status === 'failed') {
+                    const existingRetry = actionsContainer.querySelector('.btn-retry');
+                    if (!existingRetry) {
+                        const retryBtn = document.createElement('button');
+                        retryBtn.className = 'btn btn-outline-danger btn-retry';
+                        retryBtn.onclick = () => retrySection(section.id);
+                        retryBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Retry';
+                        actionsContainer.appendChild(retryBtn);
+                    }
+
+                    // Add error message
+                    const titleContainer = sectionElement.querySelector('.section-title');
+                    if (!titleContainer.querySelector('.error-message')) {
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'error-message';
+                        errorDiv.textContent = section.error || 'Generation failed';
+                        titleContainer.appendChild(errorDiv);
+                    }
+                } else {
+                    // Remove retry button and error message
+                    const retryBtn = actionsContainer.querySelector('.btn-retry');
+                    if (retryBtn) retryBtn.remove();
+
+                    const errorMsg = sectionElement.querySelector('.error-message');
+                    if (errorMsg) errorMsg.remove();
+                }
+            }
+        }
+
+        function updateProgress() {
+            const total = generationState.sections.length;
+            const completed = generationState.sections.filter(s => s.status === 'completed').length;
+            const failed = generationState.sections.filter(s => s.status === 'failed').length;
+            const pending = generationState.sections.filter(s => s.status === 'pending').length;
+
+            const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+            // Update progress bar
+            document.getElementById('overall-progress-bar').style.width = percentage + '%';
+            document.getElementById('progress-text').textContent = percentage + '%';
+
+            // Update counters
+            document.getElementById('completed-count').textContent = completed;
+            document.getElementById('failed-count').textContent = failed;
+            document.getElementById('pending-count').textContent = pending;
+        }
+
+        async function retrySection(sectionId) {
+            const section = generationState.sections.find(s => s.id === sectionId);
+            if (!section) return;
+
+            section.status = 'loading';
+            updateSectionDisplay(section);
+
+            try {
+                const response = await fetch('/api/generate/retry', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        section_id: sectionId,
+                        plan_id: generationState.plan_id
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    section.status = 'completed';
+                    generationState.completedSections.push(result.section);
+                    addSectionToPreview(result.section);
+                } else {
+                    section.status = 'failed';
+                    section.error = result.error;
+                }
+
+                updateSectionDisplay(section);
+                updateProgress();
+
+            } catch (error) {
+                section.status = 'failed';
+                section.error = error.message;
+                updateSectionDisplay(section);
+            }
+        }
+
+        function pauseGeneration() {
+            generationState.isPaused = true;
+            document.getElementById('pause-generation-btn').style.display = 'none';
+            document.getElementById('start-generation-btn').style.display = 'block';
+        }
+
+        function completeGeneration() {
+            generationState.isGenerating = false;
+            document.getElementById('pause-generation-btn').style.display = 'none';
+            document.getElementById('proceed-to-editor-btn').style.display = 'block';
+        }
+
+        function proceedToEditor() {
+            // Proceed to editor with plan_id parameter
+            if (generationState.plan_id) {
+                window.location.href = `/admin/report-editor?plan_id=${generationState.plan_id}`;
+            } else {
+                alert('No generation plan found. Please start generation first.');
+            }
+        }
+
+        function backToAdmin() {
+            if (confirm('Are you sure you want to go back? Your progress will be lost.')) {
+                window.location.href = '/admin';
+            }
+        }
+
+        // Event listeners
+        document.getElementById('start-generation-btn').addEventListener('click', startGeneration);
+        document.getElementById('pause-generation-btn').addEventListener('click', pauseGeneration);
+        document.getElementById('proceed-to-editor-btn').addEventListener('click', proceedToEditor);
+    </script>
+
+</body>
+</html>
