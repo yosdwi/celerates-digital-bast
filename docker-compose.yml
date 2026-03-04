@@ -20,7 +20,7 @@ services:
     env_file: .env
     command: ["python", "fastapi_server.py"]
     volumes:
-      - ./generation_plans.db:/generation_plans.db
+      - ./generation_plans.db:/tmp/generation_plans.db
     expose:
       - "8000"
     networks:
