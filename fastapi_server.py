@@ -32,7 +32,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # SQLite database for generation plans
-DB_PATH = "/tmp/generation_plans.db"
+DB_PATH = "generation_plans.db"
 
 def init_db():
     """Initialize SQLite database for generation plans"""

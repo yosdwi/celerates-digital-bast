@@ -498,7 +498,9 @@
                     })
                 });
 
+                console.log('Plan response status:', planResponse.status);
                 const planData = await planResponse.json();
+                console.log('Plan response data:', planData);
 
                 if (planData.success) {
                     generationState.plan_id = planData.plan_id;
@@ -506,7 +508,8 @@
                     renderSectionsList();
                     updateProgress();
                 } else {
-                    alert('Failed to create generation plan: ' + planData.error);
+                    alert('Failed to create generation plan: ' + (planData.error || 'Unknown error'));
+                    console.log('Full response:', planData);
                 }
 
             } catch (error) {
