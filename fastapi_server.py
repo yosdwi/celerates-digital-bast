@@ -32,8 +32,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # SQLite database for generation plans
-# Use absolute path in container to ensure consistency
-DB_PATH = "/app/generation_plans.db" if os.path.exists("/app") else "generation_plans.db"
+DB_PATH = "generation_plans.db"
 
 def init_db():
     """Initialize SQLite database for generation plans"""

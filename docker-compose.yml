@@ -18,6 +18,7 @@ services:
     image: yosdwi/digital-bast:latest
     container_name: digital-bast-web
     env_file: .env
+    working_dir: /app
     command: ["python", "fastapi_server.py"]
     volumes:
       - ./generation_plans.db:/app/generation_plans.db
