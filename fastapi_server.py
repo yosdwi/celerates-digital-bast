@@ -1046,56 +1046,6 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
         "month": month_name
     })
 
-# async def _generate_iot_aktivitas_fallback(request: Request, records: list, month_name: str):
-#     """Fallback function - NO MORE DUMMY DATA!"""
-#     print(f"DEBUG: Fallback called but returning empty data")
-
-#     # NO FALLBACK! Return empty data
-#     aktivitas_data = []
-
-#     # Original logic for actual records (if any)
-#     for i, record in enumerate(records, 1):
-#         task_list = record.get('Task List', 'No Task Description')
-#         start_date = record.get('Start Date', '')
-#         end_date = record.get('End Date', '')
-#         requestor = record.get('Requestor', 'N/A')
-
-#         pic_list = record.get('PIC', [])
-#         pic_str = ', '.join(pic_list) if isinstance(pic_list, list) else str(pic_list or 'N/A')
-
-#         # Hardcoded lead time to 8 jam
-#         lead_time = "8 Jam"
-
-#         formatted_start = start_date
-#         formatted_end = end_date
-#         if start_date:
-#             try:
-#                 formatted_start = datetime.strptime(start_date, '%Y-%m-%d').strftime('%d %B %Y')
-#             except:
-#                 pass
-#         if end_date:
-#             try:
-#                 formatted_end = datetime.strptime(end_date, '%Y-%m-%d').strftime('%d %B %Y')
-#             except:
-#                 pass
-
-#         aktivitas_data.append({
-#             "no": i,
-#             "detail_aktivitas": task_list,
-#             "tanggal_request": formatted_start,
-#             "tanggal_penyelesaian": formatted_end,
-#             "lead_time": lead_time,
-#             "requestor_pic": "Bagas Eko Prasetyo",
-#             "engineer_manage": pic_str
-#         })
-
-#     # Render template as string instead of TemplateResponse for progressive generation
-#     template = templates.get_template('tasklistiotoperation/detail_aktivitas_pihak_kedua.html')
-#     return template.render({
-#         "request": request,
-#         "aktivitas_data": aktivitas_data,
-#         "month": month_name
-#     })
 
 async def _generate_iot_respon_page(request: Request, records: list, month_name: str):
     """Generate response time page from NocoDB records"""
@@ -1143,103 +1093,6 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
         "summary_percentage": "97.5",
         "month": month_name
     })
-
-@app.get("/tasklistiotoperation", response_class=HTMLResponse)
-async def tasklistiotoperation_test(request: Request, page: str = "problem"):
-    """Test endpoint for IoT operation templates with dummy data"""
-    if page == "problem":
-        dummy_problem_data = [
-            {
-                "object": "Availability System",
-                "formula": "Total Up Time/(Total Up Time + Total Down Time) x 100%",
-                "keterangan": [
-                    "Up Time: Waktu sistem berjalan normal tanpa gangguan",
-                    "Down Time: Waktu sistem mengalami gangguan atau tidak dapat diakses",
-                    "Target minimum: 99.5%"
-                ]
-            },
-            {
-                "object": "Response Time Performance",
-                "formula": "Total Response Time/Total Request x 100%",
-                "keterangan": [
-                    "Response Time: Waktu yang dibutuhkan sistem untuk merespon request",
-                    "Target maksimum: 3 detik per request",
-                    "Diukur dari endpoint utama aplikasi"
-                ]
-            },
-            {
-                "object": "Error Rate System",
-                "formula": "Total Error/(Total Success + Total Error) x 100%",
-                "keterangan": [
-                    "Error: Jumlah request yang menghasilkan error (4xx, 5xx)",
-                    "Success: Jumlah request yang berhasil diproses (2xx, 3xx)",
-                    "Target maksimum: 1%"
-                ]
-            }
-        ]
-
-        return templates.TemplateResponse('tasklistiotoperation/detail_problem_pihak_kedua.html', {
-            "request": request,
-            "problem_data": dummy_problem_data
-        })
-
-    elif page == "aktivitas":
-        dummy_aktivitas_data = [
-            {"no": 1, "detail_aktivitas": "Site Survey MIR", "tanggal_request": "15 Januari 2026", "tanggal_penyelesaian": "16 Januari 2026", "lead_time": "1 Hari", "requestor_pic": "Bagas Eko Prasetyo", "engineer_manage": "OVIANTO/MUHAMMAD ATSAL/AZANDRI"},
-            {"no": 2, "detail_aktivitas": "Wib Project MIR", "tanggal_request": "22 Januari 2026", "tanggal_penyelesaian": "31 Januari 2026", "lead_time": "7 Hari", "requestor_pic": "Bagas Eko Prasetyo", "engineer_manage": "OVIANTO/MUHAMMAD ATSAL/AZANDRI"},
-            {"no": 3, "detail_aktivitas": "Wib Project MIR", "tanggal_request": "22 Januari 2026", "tanggal_penyelesaian": "26 Januari 2026", "lead_time": "4 Hari", "requestor_pic": "Bagas Eko Prasetyo", "engineer_manage": "OVIANTO/MUHAMMAD ATSAL/AZANDRI"},
-            {"no": 4, "detail_aktivitas": "Wib Project MIR", "tanggal_request": "22 Januari 2026", "tanggal_penyelesaian": "23 Januari 2026", "lead_time": "1 Hari", "requestor_pic": "Bagas Eko Prasetyo", "engineer_manage": "OVIANTO/MUHAMMAD ATSAL/AZANDRI"},
-            {"no": 5, "detail_aktivitas": "Wib Project MIR", "tanggal_request": "22 Januari 2026", "tanggal_penyelesaian": "30 Januari 2026", "lead_time": "6 Hari", "requestor_pic": "Bagas Eko Prasetyo", "engineer_manage": "OVIANTO/MUHAMMAD ATSAL/AZANDRI"}
-        ]
-
-        return templates.TemplateResponse('tasklistiotoperation/detail_aktivitas_pihak_kedua.html', {
-            "request": request,
-            "aktivitas_data": dummy_aktivitas_data
-        })
-
-    elif page == "respon":
-        dummy_respon_data = []
-        problems = [
-            "Server down pada monitoring system BRCG",
-            "Koneksi GPS terputus pada unit MH02-001",
-            "Database connection timeout",
-            "Sensor temperature tidak merespon",
-            "Alert system tidak mengirim notifikasi",
-            "Dashboard loading sangat lambat",
-            "API endpoint returning error 500",
-            "Data logging terhenti mendadak"
-        ]
-
-        for i, problem in enumerate(problems):
-            dummy_respon_data.append({
-                "no": i + 1,
-                "problem": problem,
-                "tanggal_problem": f"{i+15}/01/2026",
-                "waktu_problem": f"{8+i}:00",
-                "tanggal_respon": f"{i+15}/01/2026",
-                "tanggal_penyelesaian": f"{i+15}/01/2026",
-                "waktu_penyelesaian": f"{10+i}:30",
-                "pic_pama": "Bagas Eko P",
-                "engineer": "Aris Purnama",
-                "waktu_respon_menit": f"{15+i*5}",
-                "aktual_waktu_1": f"{15+i*5}",
-                "aktual_waktu_2": f"{150+i*10}",
-                "aktual_waktu_3": f"{30+i*3}",
-                "aktual_waktu_4": f"{180+i*15}",
-                "performance_respon_1": "95",
-                "performance_respon_2": "98",
-                "performance_penyelesaian_1": "97",
-                "performance_penyelesaian_2": "99"
-            })
-
-        return templates.TemplateResponse('tasklistiotoperation/detail_respon_resolution_time.html', {
-            "request": request,
-            "respon_data": dummy_respon_data,
-            "summary_percentage": "97.5"
-        })
-
-    else:
-        return await tasklistiotoperation_test(request, "problem")
 
 @app.post("/report/evidence")
 async def generate_evidence_report(
@@ -1322,48 +1175,6 @@ async def generate_evidence_report(
         "type": type,
         "month": month_name
     })
-
-@app.get("/evidence", response_class=HTMLResponse)
-async def evidence_test(request: Request):
-    """Test endpoint for evidence templates with dummy data"""
-    dummy_evidence_data = [
-        {
-            "number": 1,
-            "title": "Monitoring dan penyesuaian sistem Web aktivitas MH02 tim site (2 Januari 2026 s/d 28 Januari 2026)",
-            "image_path": "/static/img/evidence1.jpg",
-            "description": "Dokumentasi kegiatan monitoring sistem web aktivitas MH02 selama periode Januari 2026"
-        },
-        {
-            "number": 2,
-            "title": "Diskusi alur aplikasi web untuk aktivitas MH02 yang bisa mengakomodir seluruh product DIGI (5 Januari 2026)",
-            "image_path": "/static/img/evidence2.jpg",
-            "description": "Meeting dan diskusi terkait pengembangan aplikasi web MH02 untuk integrasi dengan produk DIGI"
-        },
-        {
-            "number": 3,
-            "title": "Implementasi fitur reporting otomatis untuk sistem monitoring BRCG (10 Januari 2026)",
-            "image_path": "/static/img/evidence3.jpg",
-            "description": "Pengembangan dan testing fitur reporting otomatis pada sistem monitoring BRCG"
-        },
-        {
-            "number": 4,
-            "title": "Setup dan konfigurasi server backup untuk disaster recovery (15 Januari 2026)",
-            "image_path": "/static/img/evidence4.jpg",
-            "description": "Proses setup server backup dan testing disaster recovery procedure"
-        },
-        {
-            "number": 5,
-            "title": "Training tim teknis untuk maintenance sistem IoT operations (20 Januari 2026)",
-            "image_path": "/static/img/evidence5.jpg",
-            "description": "Sesi training internal untuk tim teknis terkait maintenance dan troubleshooting sistem IoT"
-        }
-    ]
-
-    return templates.TemplateResponse('evidence/evidence_aktivitas.html', {
-        "request": request,
-        "evidence_data": dummy_evidence_data
-    })
-
 
 @app.post("/report/all")
 async def generate_all_report(
@@ -1948,9 +1759,6 @@ async def retry_section(
             "section_id": section_id,
             "error": str(e)
         }
-
-
-# Export PDF endpoint removed - using browser print instead
 
 
 # Helper functions for progressive generation
@@ -2643,114 +2451,6 @@ async def _get_attendance_html_section(month: int, year: int, report_type: str, 
         'title': 'PAMA Attendance Report',
         'content': f"<div>No attendance data found for {report_type} employees in month {month}</div>"
     }
-
-@app.post("/export/pdf")
-async def export_to_pdf_weasy(
-    html_content: str = Form(...),
-    type: str = Form(...),
-    month: int = Form(...),
-    year: int = Form(...),
-    berita_acara: UploadFile = File(None)
-):
-    """
-    Simple PDF export - HTML sudah matang dengan page breaks yang benar
-    """
-    try:
-        try:
-            from weasyprint import HTML, CSS
-            from weasyprint.text.fonts import FontConfiguration
-        except ImportError:
-            raise HTTPException(500, "WeasyPrint not installed. Run: pip install weasyprint")
-
-        import tempfile
-        import uuid
-        import io
-
-        temp_dir = Path(tempfile.mkdtemp())
-        export_id = str(uuid.uuid4())[:8]
-
-        clean_html = html_content
-        clean_html = re.sub(r'<button[^>]*export-btn[^>]*>.*?</button>', '', clean_html, flags=re.DOTALL)
-        clean_html = re.sub(r'<div[^>]*id="exportModal"[^>]*>.*?</div>', '', clean_html, flags=re.DOTALL)
-        clean_html = re.sub(r'<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>', '', clean_html, flags=re.DOTALL)
-        clean_html = re.sub(r'onclick="[^"]*"', '', clean_html)
-        clean_html = clean_html.replace('src="/static/', f'src="http://localhost:8000/static/')
-
-        pdf_css = """
-        <style>
-        @media print {
-            body { margin: 0; background: white; }
-            .page-break { page-break-before: always !important; }
-            .timesheet-employee { page-break-before: always !important; }
-            .timesheet-employee:first-child { page-break-before: auto !important; }
-            .timesheet-employee {
-                page-break-inside: avoid !important;
-            }
-            .export-btn, #exportModal { display: none !important; }
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        }
-        </style>
-        """
-
-        clean_html = clean_html.replace('</head>', pdf_css + '</head>')
-
-        html_file = temp_dir / f"report_{export_id}.html"
-        with open(html_file, 'w', encoding='utf-8') as f:
-            f.write(clean_html)
-
-        font_config = FontConfiguration()
-        html_doc = HTML(filename=str(html_file))
-        pdf_bytes = html_doc.write_pdf(font_config=font_config, optimize_images=True)
-
-        if berita_acara and berita_acara.filename:
-            try:
-                from PyPDF2 import PdfReader, PdfWriter
-
-                berita_content = await berita_acara.read()
-
-                if berita_acara.filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                    try:
-                        import img2pdf
-                        berita_pdf_bytes = img2pdf.convert(berita_content)
-                    except ImportError:
-                        raise HTTPException(500, "img2pdf required for image conversion")
-                else:
-                    berita_pdf_bytes = berita_content
-
-                berita_reader = PdfReader(io.BytesIO(berita_pdf_bytes))
-                report_reader = PdfReader(io.BytesIO(pdf_bytes))
-
-                writer = PdfWriter()
-
-                for page in berita_reader.pages:
-                    writer.add_page(page)
-
-                for page in report_reader.pages:
-                    writer.add_page(page)
-
-                merged_pdf = io.BytesIO()
-                writer.write(merged_pdf)
-                pdf_bytes = merged_pdf.getvalue()
-
-            except Exception as e:
-                pass
-
-        try:
-            import shutil
-            shutil.rmtree(temp_dir)
-        except:
-            pass
-
-        filename = f"{context_data['type'].title()}_Report_{context_data['month']}_{context_data['year']}.pdf"
-
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
-
-    except Exception as e:
-        raise HTTPException(500, f"PDF export failed: {str(e)}")
 
 @app.get("/admin/attendance-celerates", response_class=HTMLResponse)
 async def attendance_celerates_dashboard_get(request: Request):

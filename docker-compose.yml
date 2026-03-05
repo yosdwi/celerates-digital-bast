@@ -90,9 +90,9 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     labels:
-      # PostgreSQL Backup Job - Testing at 11:00, Production at 02:00
-      ofelia.job-run.postgres_backup.schedule: "0 11 * * *"
-      ofelia.job-run.postgres_backup.command: "/home/debian/script/postgresql/postgres_backup.sh"
+      # PostgreSQL Backup Job - Production at 22:00 (10 PM)
+      ofelia.job-run.postgres_backup.schedule: "0 22 * * *"
+      ofelia.job-run.postgres_backup.command: "sh /home/debian/script/postgresql/postgres_backup.sh"
 
 # volumes:
   # tinyauth_data:
