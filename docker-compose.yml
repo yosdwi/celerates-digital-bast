@@ -18,6 +18,8 @@ services:
     image: yosdwi/digital-bast:latest
     container_name: digital-bast-web
     env_file: .env
+    environment:
+      - DB_URL=postgresql://celerates-admin:celerates911!!!@postgresql-local-postgre-1:5432/neondb
     command: ["python", "fastapi_server.py"]
     expose:
       - "8000"
@@ -30,6 +32,7 @@ services:
     env_file: .env
     environment:
       - HEALTHCHECK_URL=https://hc-ping.com/c67ead79-ffdd-4517-b360-fa03763a3df6
+      - DB_URL=postgresql://celerates-admin:celerates911!!!@postgresql-local-postgre-1:5432/neondb
     command: ["sleep", "infinity"]
     deploy:
       resources:

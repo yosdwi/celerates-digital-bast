@@ -1131,7 +1131,12 @@ async def generate_evidence_report(
 
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
-    where_clause = f"(Month,eq,{month_name})~and(Evidence Task,notnull)"
+    # Use date range filtering instead of month name
+    current_year = datetime.now().year
+    start_date, end_date = get_dynamic_month_dates(current_year, month)
+    start_date_str = start_date.strftime('%Y-%m-%d')
+    end_date_str = end_date.strftime('%Y-%m-%d')
+    where_clause = f"(Date,gte,{start_date_str})~and(Date,lte,{end_date_str})~and(Evidence Task,notnull)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
 
@@ -1948,6 +1953,12 @@ async def _generate_single_employee_attendance(employee_name: str, employee_mapp
 async def _get_iot_tasklist_html_content(month: int, section_type: str, request: Request):
     """Generate IoT tasklist HTML content for specific section"""
     try:
+        # Get date range for the month
+        current_year = datetime.now().year
+        start_date, end_date = get_dynamic_month_dates(current_year, month)
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+
         indonesian_months = {
             1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
             5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
@@ -1960,9 +1971,22 @@ async def _get_iot_tasklist_html_content(month: int, section_type: str, request:
             return ""
 
         nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
-        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
+        # Use date range filtering with Start_Date and End_Date validation
+        where_clause = f"(Date,gte,{start_date_str})~and(Date,lte,{end_date_str})~and(Status,eq,Closed)"
         response = nocodb.get_records(limit=2000, where=where_clause)
-        records = response.get('list', []) if response else []
+        raw_records = response.get('list', []) if response else []
+
+        # Additional validation to filter out N/A, empty, or null dates
+        records = []
+        for record in raw_records:
+            start_date_val = record.get('Start_Date', '')
+            end_date_val = record.get('End_Date', '')
+
+            # Skip if dates are empty, N/A, null, or contain invalid values
+            if (start_date_val and end_date_val and
+                str(start_date_val).strip() not in ['', 'N/A', 'null', 'None'] and
+                str(end_date_val).strip() not in ['', 'N/A', 'null', 'None']):
+                records.append(record)
 
         if section_type == "problem":
             return await _generate_iot_problem_page(request, records, month_name)
@@ -1977,6 +2001,12 @@ async def _get_iot_tasklist_html_content(month: int, section_type: str, request:
 async def _get_developer_tasklist_html_content(month: int, section_type: str, request: Request):
     """Generate Developer tasklist HTML content for specific section"""
     try:
+        # Get date range for the month
+        current_year = datetime.now().year
+        start_date, end_date = get_dynamic_month_dates(current_year, month)
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+
         indonesian_months = {
             1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
             5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
@@ -2001,9 +2031,35 @@ async def _get_developer_tasklist_html_content(month: int, section_type: str, re
         if not kategori_name:
             return ""
 
-        where_clause = f"(Month,eq,{month_name})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
+        # First, let's check with basic filtering to see field structure
+        where_clause_basic = f"(Date,gte,{start_date_str})~and(Date,lte,{end_date_str})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
+        response = nocodb.get_records(limit=5, where=where_clause_basic)
+        debug_records = response.get('list', []) if response else []
+
+        # Debug: print available fields
+        if debug_records:
+            print(f"🔍 Available fields in tasklist record: {list(debug_records[0].keys())}")
+            first_record = debug_records[0]
+            for key in first_record.keys():
+                if 'date' in key.lower() or 'start' in key.lower() or 'end' in key.lower():
+                    print(f"🔍 Date-related field '{key}': {first_record.get(key)}")
+
+        # Use the full filtering with proper field names
+        where_clause = f"(Date,gte,{start_date_str})~and(Date,lte,{end_date_str})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
         response = nocodb.get_records(limit=2000, where=where_clause)
-        records = response.get('list', []) if response else []
+        raw_records = response.get('list', []) if response else []
+
+        # Additional validation to filter out N/A, empty, or null dates
+        records = []
+        for record in raw_records:
+            start_date_val = record.get('Start_Date', '')
+            end_date_val = record.get('End_Date', '')
+
+            # Skip if dates are empty, N/A, null, or contain invalid values
+            if (start_date_val and end_date_val and
+                str(start_date_val).strip() not in ['', 'N/A', 'null', 'None'] and
+                str(end_date_val).strip() not in ['', 'N/A', 'null', 'None']):
+                records.append(record)
 
         if section_type == "kualitas":
             return await _generate_dev_kualitas_data(request, records, month_name)
@@ -2309,7 +2365,12 @@ async def _get_evidence_html_section(evidence_type: str, month: int, request: Re
         return {'type': 'evidence', 'title': '3. Evidence Aktivitas', 'content': '<div>Evidence table not configured.</div>'}
 
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
-    where_clause = f"(Month,eq,{month_name})~and(Evidence Task,notnull)"
+    # Use date range filtering instead of month name
+    current_year = datetime.now().year
+    start_date, end_date = get_dynamic_month_dates(current_year, month)
+    start_date_str = start_date.strftime('%Y-%m-%d')
+    end_date_str = end_date.strftime('%Y-%m-%d')
+    where_clause = f"(Date,gte,{start_date_str})~and(Date,lte,{end_date_str})~and(Evidence Task,notnull)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
     
@@ -2795,13 +2856,11 @@ async def export_attendance_celerates_csv(
 
 async def _get_all_evidence_records(evidence_type: str, month: int):
     """Get all evidence records for planning purposes"""
-    indonesian_months = {
-        1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
-        5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
-        9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
-    }
-
-    month_name = indonesian_months[month]
+    # Get date range for the month
+    current_year = datetime.now().year
+    start_date, end_date = get_dynamic_month_dates(current_year, month)
+    start_date_str = start_date.strftime('%Y-%m-%d')
+    end_date_str = end_date.strftime('%Y-%m-%d')
 
     if evidence_type == "iotoperations":
         table_key = "tasklist_iot"
@@ -2815,7 +2874,8 @@ async def _get_all_evidence_records(evidence_type: str, month: int):
         return []
 
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
-    where_clause = f"(Month,eq,{month_name})~and(Evidence Task,notnull)"
+    # Use date range filtering instead of month name
+    where_clause = f"(Date,gte,{start_date_str})~and(Date,lte,{end_date_str})~and(Evidence Task,notnull)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
 
