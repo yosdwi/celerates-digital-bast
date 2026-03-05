@@ -171,7 +171,7 @@ class ClsPostgreSQLProcessor:
 
             with self._get_connection() as conn:
                 with conn.cursor() as cursor:
-                    batch_size = 500
+                    batch_size = 50
                     total_records = len(records)
                     print(f"Processing {total_records} timesheet records in batches of {batch_size}...")
 

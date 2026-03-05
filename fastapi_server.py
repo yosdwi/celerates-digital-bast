@@ -937,114 +937,96 @@ async def _generate_iot_problem_page(request: Request, records: list, month_name
     })
 
 async def _generate_iot_aktivitas_page(request: Request, records: list, month_name: str):
-    """Generate activities page - LANGSUNG PAKE FUNCTION YANG PASTI BERHASIL"""
+    """Generate activities page from Fauzan's Tasklist Developer data"""
 
-    # LANGSUNG panggil function yang sama dengan yang berhasil di timesheet generation
     from datetime import datetime
-    current_date = datetime.now()
+    from src.classes.ClsPostgreSQLProcessor import ClsPostgreSQLProcessor
 
-    # Extract month number from month_name
-    indonesian_months = {
-        'Januari': 1, 'Februari': 2, 'Maret': 3, 'April': 4,
-        'Mei': 5, 'Juni': 6, 'Juli': 7, 'Agustus': 8,
-        'September': 9, 'Oktober': 10, 'November': 11, 'Desember': 12
-    }
+    # Get tasklist developer data for Fauzan
+    tasklist_table = config.NOCODB_TABLES.get("tasklist")
 
-    month_num = indonesian_months.get(month_name, current_date.month)
-    year_num = current_date.year
+    # Get Fauzan's tasks directly from database (PostgreSQL processor has issues with underscores)
+    import psycopg2
 
-    print(f"DEBUG: Calling _generate_single_employee_timesheet for Fauzan, month={month_num}, year={year_num}")
+    conn = psycopg2.connect(config.DB_URL)
+    cursor = conn.cursor()
 
-    # PANGGIL FUNCTION YANG PASTI BERHASIL!
-    fauzan_timesheet_data = await _generate_single_employee_timesheet(
-        "Muhammad Fauzan Acyuto",
-        {"nrp": "JIMT24012", "employee_name": "Muhammad Fauzan Acyuto", "id": 123},
-        month_num,
-        year_num
-    )
+    cursor.execute('''
+    SELECT "Task_List", "Start_Date", "End_Date", "Requestor"
+    FROM "pc38r6u1npuq0ul"."Tasklist Developer"
+    WHERE "Id_Key" LIKE '2026-01%100'
+    AND "Status" = 'Closed'
+    ORDER BY "Start_Date"
+    ''')
 
-    # DEBUG DETAIL SEMUA KEYS
-    if fauzan_timesheet_data:
-        print(f"DEBUG: Keys in timesheet data: {list(fauzan_timesheet_data.keys())}")
-        if 'timesheet_rows' in fauzan_timesheet_data:
-            rows = fauzan_timesheet_data['timesheet_rows']
-            print(f"DEBUG: Got {len(rows)} rows")
-            if rows:
-                print(f"DEBUG: First row keys: {list(rows[0].keys())}")
-                print(f"DEBUG: First row sample: {rows[0]}")
-        else:
-            print("DEBUG: No 'timesheet_rows' key found!")
-            print(f"DEBUG: Available keys: {list(fauzan_timesheet_data.keys())}")
+    task_rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
 
-    if not fauzan_timesheet_data or not fauzan_timesheet_data.get('timesheet_rows'):
-        print("DEBUG: No timesheet data returned, making DUMMY data for now")
-        # SEMENTARA PAKE DUMMY BIAR KELIATAN ADA DATA
-        aktivitas_data = [
-            {
-                "no": 1,
-                "detail_aktivitas": "REAL DATA DEBUGGING - Task from Fauzan timesheet",
-                "tanggal_request": "01 Maret 2026",
-                "tanggal_penyelesaian": "01 Maret 2026",
-                "lead_time": "8 Jam",
-                "requestor_pic": "Bagas Eko Prasetyo",
-                "engineer_manage": "Muhammad Fauzan Acyuto"
-            }
-        ]
-    else:
-        print(f"DEBUG: Processing {len(fauzan_timesheet_data.get('timesheet_rows', []))} timesheet rows")
+    # Convert to dictionary format for easier processing
+    fauzan_tasks = []
+    for row in task_rows:
+        fauzan_tasks.append({
+            'Task_List': row[0],
+            'Start_Date': row[1],
+            'End_Date': row[2],
+            'Requestor': row[3]
+        })
 
-        # Convert timesheet rows ke aktivitas format
-        aktivitas_data = []
-        row_counter = 1
+    print(f"DEBUG: Found {len(fauzan_tasks)} completed tasks for Fauzan in January 2026")
 
-        for row in fauzan_timesheet_data.get('timesheet_rows', []):
-            print(f"DEBUG: Processing row: {row}")
+    # Process Fauzan's tasklist data
+    aktivitas_data = []
 
-            # PAKE FIELD YANG BENER: Work Description
-            work_desc = row.get('Work Description', [])
-            work_desc_iot = row.get('Work Description IoT', [])
-            date_value = row.get('Date', '')
+    if fauzan_tasks:
+        print(f"DEBUG: Sample task record: {fauzan_tasks[0] if fauzan_tasks else 'None'}")
 
-            # Ambil task dari Work Description (list)
-            if work_desc_iot and len(work_desc_iot) > 0:
-                task_list = work_desc_iot[0] if isinstance(work_desc_iot, list) else str(work_desc_iot)
-            elif work_desc and len(work_desc) > 0:
-                task_list = work_desc[0] if isinstance(work_desc, list) else str(work_desc)
-            else:
-                task_list = ''
+        for i, task in enumerate(fauzan_tasks, 1):
+            # Get task fields (using correct column names)
+            task_list = task.get('Task_List', '')
+            start_date = task.get('Start_Date', '')
+            end_date = task.get('End_Date', '')
+            requestor = task.get('Requestor', 'Bagas Eko Prasetyo')  # Default PIC PAMA
 
-            print(f"DEBUG: work_desc={work_desc}, work_desc_iot={work_desc_iot}")
-            print(f"DEBUG: final task_list='{task_list}', date='{date_value}'")
-
+            # Skip if no task description
             if not task_list or task_list.strip() in ['', '-', 'N/A']:
-                print(f"DEBUG: Skipping empty task")
                 continue
 
-            # Format date
-            formatted_date = date_value
-            if date_value:
+            # Format dates
+            formatted_start = start_date
+            formatted_end = end_date
+            if start_date:
                 try:
-                    if isinstance(date_value, str):
-                        parsed_date = datetime.strptime(date_value, '%Y-%m-%d')
-                        formatted_date = parsed_date.strftime('%d %B %Y')
+                    if isinstance(start_date, str):
+                        parsed_date = datetime.strptime(start_date, '%Y-%m-%d')
+                        formatted_start = parsed_date.strftime('%d %B %Y')
+                except:
+                    pass
+
+            if end_date:
+                try:
+                    if isinstance(end_date, str):
+                        parsed_date = datetime.strptime(end_date, '%Y-%m-%d')
+                        formatted_end = parsed_date.strftime('%d %B %Y')
                 except:
                     pass
 
             aktivitas_data.append({
-                "no": row_counter,
+                "no": i,
                 "detail_aktivitas": task_list,
-                "tanggal_request": formatted_date,
-                "tanggal_penyelesaian": formatted_date,
-                "lead_time": "8 Jam",
-                "requestor_pic": "Bagas Eko Prasetyo",
+                "tanggal_request": formatted_start,
+                "tanggal_penyelesaian": formatted_end,
+                "lead_time": "8 Jam",  # Hardcoded as requested
+                "requestor_pic": requestor,
                 "engineer_manage": "Muhammad Fauzan Acyuto"
             })
 
-            row_counter += 1
+        print(f"DEBUG: Generated {len(aktivitas_data)} activities from Fauzan's tasklist")
+    else:
+        print("DEBUG: No completed tasks found for Fauzan in February 2026")
+        aktivitas_data = []
 
-        print(f"DEBUG: Generated {len(aktivitas_data)} activities from function data")
-
-    # Render template as string instead of TemplateResponse for progressive generation
+    # Render template
     template = templates.get_template('tasklistiotoperation/detail_aktivitas_pihak_kedua.html')
     return template.render({
         "request": request,
@@ -1052,56 +1034,56 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
         "month": month_name
     })
 
-async def _generate_iot_aktivitas_fallback(request: Request, records: list, month_name: str):
-    """Fallback function - NO MORE DUMMY DATA!"""
-    print(f"DEBUG: Fallback called but returning empty data")
+# async def _generate_iot_aktivitas_fallback(request: Request, records: list, month_name: str):
+#     """Fallback function - NO MORE DUMMY DATA!"""
+#     print(f"DEBUG: Fallback called but returning empty data")
 
-    # NO FALLBACK! Return empty data
-    aktivitas_data = []
+#     # NO FALLBACK! Return empty data
+#     aktivitas_data = []
 
-    # Original logic for actual records (if any)
-    for i, record in enumerate(records, 1):
-        task_list = record.get('Task List', 'No Task Description')
-        start_date = record.get('Start Date', '')
-        end_date = record.get('End Date', '')
-        requestor = record.get('Requestor', 'N/A')
+#     # Original logic for actual records (if any)
+#     for i, record in enumerate(records, 1):
+#         task_list = record.get('Task List', 'No Task Description')
+#         start_date = record.get('Start Date', '')
+#         end_date = record.get('End Date', '')
+#         requestor = record.get('Requestor', 'N/A')
 
-        pic_list = record.get('PIC', [])
-        pic_str = ', '.join(pic_list) if isinstance(pic_list, list) else str(pic_list or 'N/A')
+#         pic_list = record.get('PIC', [])
+#         pic_str = ', '.join(pic_list) if isinstance(pic_list, list) else str(pic_list or 'N/A')
 
-        # Hardcoded lead time to 8 jam
-        lead_time = "8 Jam"
+#         # Hardcoded lead time to 8 jam
+#         lead_time = "8 Jam"
 
-        formatted_start = start_date
-        formatted_end = end_date
-        if start_date:
-            try:
-                formatted_start = datetime.strptime(start_date, '%Y-%m-%d').strftime('%d %B %Y')
-            except:
-                pass
-        if end_date:
-            try:
-                formatted_end = datetime.strptime(end_date, '%Y-%m-%d').strftime('%d %B %Y')
-            except:
-                pass
+#         formatted_start = start_date
+#         formatted_end = end_date
+#         if start_date:
+#             try:
+#                 formatted_start = datetime.strptime(start_date, '%Y-%m-%d').strftime('%d %B %Y')
+#             except:
+#                 pass
+#         if end_date:
+#             try:
+#                 formatted_end = datetime.strptime(end_date, '%Y-%m-%d').strftime('%d %B %Y')
+#             except:
+#                 pass
 
-        aktivitas_data.append({
-            "no": i,
-            "detail_aktivitas": task_list,
-            "tanggal_request": formatted_start,
-            "tanggal_penyelesaian": formatted_end,
-            "lead_time": lead_time,
-            "requestor_pic": "Bagas Eko Prasetyo",
-            "engineer_manage": pic_str
-        })
+#         aktivitas_data.append({
+#             "no": i,
+#             "detail_aktivitas": task_list,
+#             "tanggal_request": formatted_start,
+#             "tanggal_penyelesaian": formatted_end,
+#             "lead_time": lead_time,
+#             "requestor_pic": "Bagas Eko Prasetyo",
+#             "engineer_manage": pic_str
+#         })
 
-    # Render template as string instead of TemplateResponse for progressive generation
-    template = templates.get_template('tasklistiotoperation/detail_aktivitas_pihak_kedua.html')
-    return template.render({
-        "request": request,
-        "aktivitas_data": aktivitas_data,
-        "month": month_name
-    })
+#     # Render template as string instead of TemplateResponse for progressive generation
+#     template = templates.get_template('tasklistiotoperation/detail_aktivitas_pihak_kedua.html')
+#     return template.render({
+#         "request": request,
+#         "aktivitas_data": aktivitas_data,
+#         "month": month_name
+#     })
 
 async def _generate_iot_respon_page(request: Request, records: list, month_name: str):
     """Generate response time page from NocoDB records"""
@@ -2102,7 +2084,7 @@ async def _get_iot_tasklist_html_content(month: int, section_type: str, request:
         if section_type == "problem":
             return await _generate_iot_problem_page(request, records, month_name)
         else:  # aktivitas
-            return await _generate_iot_aktivitas_fallback(request, records, month_name)
+            return await _generate_iot_aktivitas_page(request, records, month_name)
 
     except Exception as e:
         print(f"Error generating IoT tasklist section {section_type}: {e}")
