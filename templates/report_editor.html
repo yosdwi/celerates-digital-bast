@@ -13,6 +13,23 @@
             --tasklist-scale: 0.7;
             --evidence-scale: 1.0;
             --attendance-scale: 1.0;
+
+            /* Define all missing CSS variables */
+            --sidebar-width: 350px;
+            --white-color: #ffffff;
+            --light-color: #f8f9fa;
+            --gray-light: #e9ecef;
+            --gray-color: #6c757d;
+            --dark-color: #343a40;
+            --dark-secondary: #495057;
+            --primary-color: #007bff;
+            --primary-dark: #0056b3;
+            --border-radius: 8px;
+            --border-radius-sm: 4px;
+            --shadow-sm: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            --shadow-md: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+            --shadow-lg: 0 1rem 3rem rgba(0, 0, 0, 0.175);
+            --transition: all 0.15s ease-in-out;
         }
 
         body {
@@ -134,19 +151,26 @@
             margin-bottom: 20px;
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
             position: relative;
-            overflow: hidden;
+            /* Allow content overflow for accurate preview */
+            overflow: visible;
+            /* Add page break simulation */
+            page-break-after: always;
+            page-break-inside: avoid;
         }
 
         /* A4 Portrait: 210×297mm at 96dpi ≈ 794×1123px */
         .page.portrait {
             width: 794px;
-            min-height: 1123px;
+            /* Use fixed height for consistent page breaks */
+            height: 1123px;
             padding: 40px;
             background: white;
             margin: 20px auto;
             border: 1px solid #e0e0e0;
             position: relative;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            /* Ensure content fits within page */
+            box-sizing: border-box;
         }
 
         /* A4 Landscape: 297×210mm at 96dpi ≈ 1123×794px */
@@ -200,12 +224,13 @@
             transform: scale(var(--tasklist-scale));
         }
 
+        /* Evidence and attendance will use individual transforms via updateSectionScale() */
         .evidence-container {
-            transform: scale(var(--evidence-scale));
+            /* Individual scaling applied via JavaScript */
         }
 
         .attendance-container {
-            transform: scale(var(--attendance-scale));
+            /* Individual scaling applied via JavaScript */
         }
 
         /* Action buttons */
@@ -260,6 +285,21 @@
 
         /* Print-specific styles */
         @media print {
+            /* Override ALL browser defaults */
+            * {
+                -webkit-print-color-adjust: exact !important;
+                color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                height: auto !important;
+                background: white !important;
+            }
+
             .editor-controls,
             .action-buttons,
             .sidebar,
@@ -275,7 +315,7 @@
                 display: none !important;
             }
 
-            /* Reset ALL styling for clean print */
+            /* Clean print styling while preserving layout */
             .page.portrait,
             .page.landscape {
                 border: none !important;
@@ -287,6 +327,8 @@
                 width: 100% !important;
                 max-width: none !important;
                 min-height: auto !important;
+                /* Keep relative positioning to allow content adjustments */
+                position: relative !important;
             }
 
             .preview-area {
@@ -304,14 +346,41 @@
 
             .page {
                 page-break-after: always;
+                page-break-inside: avoid;
                 margin: 0 !important;
                 box-shadow: none !important;
                 display: block !important;
                 position: relative !important;
+                /* Force exact page height in print */
+                height: auto !important;
+                min-height: 0 !important;
             }
 
             .page:last-child {
                 page-break-after: auto;
+            }
+
+            /* FORCE preservation of user adjustments with maximum specificity */
+            .page .section-container,
+            .page.portrait .section-container,
+            .page.landscape .section-container {
+                /* CRITICAL: Keep user adjustments for print - DO NOT reset transform */
+                position: relative !important;
+                width: 100% !important;
+                /* Preserve transform-origin for proper scaling */
+                transform-origin: top left !important;
+                /* Avoid breaking sections across pages */
+                page-break-inside: avoid !important;
+                /* Force browser to keep inline styles (from JavaScript adjustments) */
+                transform: inherit !important;
+            }
+
+            /* Force keep inline transform styles from JavaScript */
+            .page .section-container[style*="transform"],
+            .page.portrait .section-container[style*="transform"],
+            .page.landscape .section-container[style*="transform"] {
+                /* This selector targets elements with inline transform styles */
+                /* Browser should preserve the inline style */
             }
 
             /* Center content properly */
@@ -321,24 +390,40 @@
                 padding: 0 !important;
             }
 
-            .section-container {
-                transform: none !important;
-                position: static !important;
-                width: 100% !important;
+            /* FORCE CSS variables to persist in print */
+            :root, html, body {
+                /* Ensure CSS variables survive print media */
+                --timesheet-scale: var(--timesheet-scale, 0.75) !important;
+                --tasklist-scale: var(--tasklist-scale, 0.7) !important;
+                --evidence-scale: var(--evidence-scale, 1.0) !important;
+                --attendance-scale: var(--attendance-scale, 1.0) !important;
             }
 
-            /* Ensure proper page orientations */
+            /* Apply scaling with fallbacks for print */
+            .page .timesheet-container {
+                transform: scale(var(--timesheet-scale, 0.75)) !important;
+                transform-origin: top left !important;
+            }
+
+            .page .tasklist-container {
+                transform: scale(var(--tasklist-scale, 0.7)) !important;
+                transform-origin: top left !important;
+            }
+
+            /* Evidence and attendance use individual transforms - no global CSS variables */
+            .page .evidence-container {
+                transform-origin: top left !important;
+                /* Individual transform will be preserved from inline styles */
+            }
+
+            .page .attendance-container {
+                transform-origin: top left !important;
+                /* Individual transform will be preserved from inline styles */
+            }
+
+            /* Ensure all pages use portrait orientation */
             @page {
                 size: A4 portrait;
-                margin: 15mm;
-            }
-
-            .page.landscape {
-                page: landscape-page;
-            }
-
-            @page landscape-page {
-                size: A4 landscape;
                 margin: 15mm;
             }
 
@@ -456,8 +541,8 @@
         {% for section in html_sections %}
         <div class="control-section">
             {% if section.type == 'timesheet' %}
-                <div class="orientation-indicator landscape">
-                    <i class="bi bi-phone-landscape me-1"></i>Landscape
+                <div class="orientation-indicator portrait">
+                    <i class="bi bi-phone me-1"></i>Portrait
                 </div>
                 <h6><i class="bi bi-table me-1"></i>{{ section.title }}</h6>
 
@@ -496,8 +581,8 @@
                 </div>
 
             {% elif section.type == 'tasklist' or section.type == 'tasklist_header' or 'tasklist' in section.title.lower() or 'sla' in section.title.lower() or 'task list' in section.title.lower() %}
-                <div class="orientation-indicator landscape">
-                    <i class="bi bi-phone-landscape me-1"></i>Landscape
+                <div class="orientation-indicator portrait">
+                    <i class="bi bi-phone me-1"></i>Portrait
                 </div>
                 <h6><i class="bi bi-list-check me-1"></i>{{ section.title }}</h6>
 
@@ -535,7 +620,14 @@
                     <div class="range-value" id="tasklist-scale-value-{{ loop.index }}">70%</div>
                 </div>
 
-            {% elif 'evidence' in section.title.lower() %}
+            {% elif section.title.startswith('3.') and 'evidence' in section.title.lower() %}
+                <div class="orientation-indicator portrait">
+                    <i class="bi bi-phone me-1"></i>Portrait
+                </div>
+                <h6><i class="bi bi-image me-1"></i>{{ section.title }}</h6>
+                <p class="text-muted small">Header page - No controls needed</p>
+
+            {% elif section.type == 'evidence' or ('evidence' in section.title.lower() and not section.title.startswith('3.')) %}
                 <div class="orientation-indicator portrait">
                     <i class="bi bi-phone me-1"></i>Portrait
                 </div>
@@ -625,7 +717,7 @@
         <!-- Global Actions -->
         <div class="action-buttons">
             <button class="btn btn-primary w-100 mb-2" onclick="printReport()">
-                <i class="bi bi-printer me-2"></i>Print Report
+                <i class="bi bi-file-pdf me-2"></i>Download PDF
             </button>
             <button class="btn btn-outline-secondary w-100" onclick="backToAdmin()">
                 <i class="bi bi-arrow-left me-2"></i>Back to Admin
@@ -655,8 +747,8 @@
                     </div>
 
                 {% elif section.type == 'timesheet' %}
-                    <!-- Timesheet pages - Landscape -->
-                    <div class="page landscape" data-section-index="{{ loop.index }}">
+                    <!-- Timesheet pages - Portrait -->
+                    <div class="page portrait" data-section-index="{{ loop.index }}">
                         <!-- Page Header with Logos -->
                         <div class="page-header">
                             <div class="logo-left">
@@ -672,15 +764,15 @@
 
                         <div class="section-container timesheet-container" data-section="timesheet">
                             <!-- CSS isolation like all_report_template.html -->
-                            <div class="timesheet-content" style="all: initial; font-family: Arial, sans-serif; transform: scale(0.8); transform-origin: top left; width: 125%; margin: 0; padding: 10px; box-sizing: border-box;">
+                            <div class="timesheet-content" style="all: initial; display: block; font-family: Arial, sans-serif; transform: scale(0.8); transform-origin: top left; width: 125%; margin: 0; padding: 10px; box-sizing: border-box;">
                                 {{ section.content | safe }}
                             </div>
                         </div>
                     </div>
 
                 {% elif section.type == 'tasklist' or section.type == 'tasklist_header' or 'tasklist' in (section.title | lower) or 'sla' in (section.title | lower) or 'task list' in (section.title | lower) %}
-                    <!-- Tasklist pages - Landscape -->
-                    <div class="page landscape" data-section-index="{{ loop.index }}">
+                    <!-- Tasklist pages - Portrait -->
+                    <div class="page portrait" data-section-index="{{ loop.index }}">
                         <!-- Page Header with Logos -->
                         <div class="page-header">
                             <div class="logo-left">
@@ -701,7 +793,19 @@
                         </div>
                     </div>
 
-                {% elif 'evidence' in (section.title | lower) %}
+                {% elif section.title.startswith('3.') and 'evidence' in (section.title | lower) %}
+                    <!-- Evidence Sub-section Header - Professional Document Style -->
+                    <div class="page portrait" data-section-index="{{ loop.index }}">
+                        <div style="display: flex; align-items: center; justify-content: center; height: 100%; text-align: center;">
+                            <div>
+                                <h1 style="font-size: 2.5rem; font-weight: 400; color: #000; margin: 0; font-family: 'Times New Roman', serif; text-transform: uppercase;">
+                                    {{ section.title }}
+                                </h1>
+                            </div>
+                        </div>
+                    </div>
+
+                {% elif section.type == 'evidence' or ('evidence' in (section.title | lower) and not section.title.startswith('3.')) %}
                     <!-- Evidence pages - Portrait -->
                     <div class="page portrait" data-section-index="{{ loop.index }}">
                         <!-- Page Header with Logos -->
@@ -751,6 +855,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script>
         // Update CSS custom properties for scaling
         function updateScale(sectionType, value) {
@@ -874,6 +980,10 @@
                         defaultScale = 0.75;
                     } else if (contentElement.classList.contains('tasklist-container')) {
                         defaultScale = 0.7;
+                    } else if (contentElement.classList.contains('evidence-container')) {
+                        defaultScale = 1.0;
+                    } else if (contentElement.classList.contains('attendance-container')) {
+                        defaultScale = 1.0;
                     }
 
                     contentElement.style.transform = `translate(0px, 0px) scale(${defaultScale})`;
@@ -894,6 +1004,10 @@
                     defaultValue = 0.75;
                 } else if (scaleSlider.id.includes('tasklist')) {
                     defaultValue = 0.7;
+                } else if (scaleSlider.id.includes('evidence')) {
+                    defaultValue = 1.0;
+                } else if (scaleSlider.id.includes('attendance')) {
+                    defaultValue = 1.0;
                 }
                 scaleSlider.value = defaultValue;
                 updateSectionScale(sectionIndex, defaultValue);
@@ -919,22 +1033,79 @@
 
 
         function printReport() {
-            // Hide sidebar and controls for printing
-            const sidebar = document.querySelector('.sidebar');
-            if (sidebar) {
-                sidebar.style.display = 'none';
+            // SCREENSHOT APPROACH - Capture actual visual content
+
+            showLoading();
+
+            // Hide editor controls
+            const editorControls = document.querySelector('.editor-controls');
+            editorControls.style.display = 'none';
+
+            // Get all pages
+            const pages = document.querySelectorAll('.page');
+            const { jsPDF } = window.jspdf;
+
+            const doc = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            let pageIndex = 0;
+            let hasAddedPage = false;
+
+            // Function to process each page
+            function processNextPage() {
+                if (pageIndex >= pages.length) {
+                    // All pages processed - save PDF
+                    doc.save('Digital_BAST_Report.pdf');
+                    editorControls.style.display = 'block';
+                    hideLoading();
+                    alert('PDF dengan content asli berhasil diunduh!');
+                    return;
+                }
+
+                const page = pages[pageIndex];
+                console.log(`Processing page ${pageIndex + 1}/${pages.length}`);
+
+                // Use html2canvas to capture the page as image
+                html2canvas(page, {
+                    scale: 1.5,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff',
+                    width: 794,
+                    height: 1123
+                }).then(canvas => {
+                    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+                    // Add new page if not first page
+                    if (hasAddedPage) {
+                        doc.addPage();
+                    }
+                    hasAddedPage = true;
+
+                    // Calculate dimensions to fit A4
+                    const imgWidth = 210; // A4 width in mm
+                    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+                    // Add image to PDF
+                    doc.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
+
+                    // Process next page
+                    pageIndex++;
+                    setTimeout(() => processNextPage(), 100);
+
+                }).catch(error => {
+                    console.error('Error capturing page:', error);
+                    // Skip this page and continue
+                    pageIndex++;
+                    setTimeout(() => processNextPage(), 100);
+                });
             }
 
-            // Trigger browser print dialog
-            window.print();
-
-            // Restore sidebar after print dialog
-            setTimeout(() => {
-                const sidebar = document.querySelector('.sidebar');
-                if (sidebar) {
-                    sidebar.style.display = 'block';
-                }
-            }, 1000);
+            // Start processing
+            setTimeout(() => processNextPage(), 500);
         }
 
         function backToAdmin() {
@@ -951,9 +1122,66 @@
             document.getElementById('loadingOverlay').style.display = 'none';
         }
 
+        // Restore adjustments from localStorage if available
+        function restoreAdjustments() {
+            const savedState = localStorage.getItem('reportAdjustments');
+            if (savedState) {
+                const state = JSON.parse(savedState);
+
+                // Restore positions
+                if (state.positions) {
+                    Object.assign(sectionPositions, state.positions);
+
+                    // Apply saved positions
+                    Object.keys(sectionPositions).forEach(sectionIndex => {
+                        const pos = sectionPositions[sectionIndex];
+                        const sectionElement = document.querySelector(`.page[data-section-index="${sectionIndex}"]`);
+                        if (sectionElement) {
+                            const contentElement = sectionElement.querySelector('.section-container');
+                            if (contentElement && pos) {
+                                // Apply saved transform
+                                const currentScale = contentElement.style.transform.match(/scale\(([\d.]+)\)/);
+                                const scale = currentScale ? currentScale[1] : '1';
+                                contentElement.style.transform = `translate(${pos.x}px, ${pos.y}px) scale(${scale})`;
+
+                                // Update position display
+                                const positionDisplay = document.getElementById(`position-value-${sectionIndex}`);
+                                if (positionDisplay) {
+                                    positionDisplay.textContent = `X: ${pos.x}px, Y: ${pos.y}px`;
+                                }
+                            }
+                        }
+                    });
+                }
+
+                // Restore CSS variables
+                if (state.cssVariables) {
+                    const root = document.documentElement;
+                    if (state.cssVariables.timesheet) {
+                        root.style.setProperty('--timesheet-scale', state.cssVariables.timesheet);
+                    }
+                    if (state.cssVariables.tasklist) {
+                        root.style.setProperty('--tasklist-scale', state.cssVariables.tasklist);
+                    }
+                    if (state.cssVariables.evidence) {
+                        root.style.setProperty('--evidence-scale', state.cssVariables.evidence);
+                    }
+                    if (state.cssVariables.attendance) {
+                        root.style.setProperty('--attendance-scale', state.cssVariables.attendance);
+                    }
+                }
+
+                // Clear saved state after restoration
+                localStorage.removeItem('reportAdjustments');
+            }
+        }
+
         // Initialize default values
         document.addEventListener('DOMContentLoaded', function() {
-            // Set initial values
+            // First try to restore saved adjustments
+            restoreAdjustments();
+
+            // Then set initial values if nothing was restored
             updateScale('timesheet', 0.75);
             updateScale('tasklist', 0.7);
             updateScale('evidence', 1.0);

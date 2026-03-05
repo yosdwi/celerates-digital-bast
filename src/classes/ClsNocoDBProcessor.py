@@ -35,7 +35,7 @@ class ClsNocoDBProcessor:
         try:
             endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
             payload = data
-            response = self.session.post(endpoint, headers=self.headers, json=payload, timeout=30)
+            response = self.session.post(endpoint, headers=self.headers, json=payload, timeout=120)
 
             if response.status_code in [200, 201]:
                 return response.json()
@@ -50,7 +50,7 @@ class ClsNocoDBProcessor:
         try:
             endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
             payload = data_list
-            response = requests.post(endpoint, headers=self.headers, json=payload, timeout=60)
+            response = requests.post(endpoint, headers=self.headers, json=payload, timeout=180)
 
             if response.status_code in [200, 201]:
                 return response.json()
@@ -73,7 +73,7 @@ class ClsNocoDBProcessor:
             if sort:
                 params["sort"] = sort
 
-            response = self.session.get(endpoint, headers=self.headers, params=params, timeout=30)
+            response = self.session.get(endpoint, headers=self.headers, params=params, timeout=120)
 
             if response.status_code == 200:
                 return response.json()
@@ -91,7 +91,7 @@ class ClsNocoDBProcessor:
             if role_filter:
                 params["where"] = f"(Role,eq,{role_filter})"
             
-            response = self.session.get(endpoint, headers=self.headers, params=params, timeout=30)
+            response = self.session.get(endpoint, headers=self.headers, params=params, timeout=120)
 
             if response.status_code == 200:
                 data = response.json()
@@ -147,7 +147,7 @@ class ClsNocoDBProcessor:
                 endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
                 payload = {"id": record_id, **attendance_data}
 
-                update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=30)
+                update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=120)
                 if update_response.status_code in [200, 201]:
                     return update_response.json()
                 else:
@@ -183,7 +183,7 @@ class ClsNocoDBProcessor:
                 endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
                 payload = {"id": record_id, **timesheet_data}
 
-                update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=30)
+                update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=120)
                 if update_response.status_code in [200, 201]:
                     return update_response.json()
                 else:
@@ -204,7 +204,7 @@ class ClsNocoDBProcessor:
         try:
             endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
             payload = {"id": record_id, **data}
-            response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=30)
+            response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=120)
             if response.status_code in [200, 201]:
                 return response.json()
             else:
@@ -219,7 +219,7 @@ class ClsNocoDBProcessor:
         try:
             endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/links/{link_field_id}/records/{record_id}"
             payload = {"Id": linked_record_id}
-            response = self.session.post(endpoint, headers=self.headers, json=payload, timeout=30)
+            response = self.session.post(endpoint, headers=self.headers, json=payload, timeout=120)
             if response.status_code in [200, 201]:
                 return True
             else:
@@ -388,7 +388,7 @@ class ClsNocoDBProcessor:
                 endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
                 payload = {"id": record_id, **task_data}
 
-                update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=30)
+                update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=120)
                 if update_response.status_code in [200, 201]:
                     return update_response.json()
                 else:
@@ -421,7 +421,7 @@ class ClsNocoDBProcessor:
                 endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
                 payload = {"id": record_id, **calendar_data}
                 
-                response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=30)
+                response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=120)
                 if response.status_code in [200, 201]:
                     return "updated"
                 else:
@@ -459,7 +459,7 @@ class ClsNocoDBProcessor:
 
                 print(payload)
 
-                update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=30)
+                update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=120)
                 if update_response.status_code in [200, 201]:
                     return update_response.json()
                 else:
@@ -534,7 +534,7 @@ class ClsNocoDBProcessor:
                     endpoint,
                     headers=self.headers,
                     json=update_data,
-                    timeout=30
+                    timeout=120
                 )
 
                 if update_response.status_code in [200, 201]:
@@ -598,7 +598,7 @@ class ClsNocoDBProcessor:
                     endpoint,
                     headers=self.headers,
                     json=update_data,
-                    timeout=30
+                    timeout=120
                 )
 
                 if update_response.status_code in [200, 201]:
