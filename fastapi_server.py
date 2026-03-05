@@ -328,6 +328,17 @@ def format_single_nocodb_record(record, all_work_descs, employee_role=None):
                 is_manual_edit = True
         except (KeyError, IndexError, AttributeError): pass
 
+    # Get start and end times for checking null values
+    start_time = get_time('Start Time')
+    end_time = get_time('End Time')
+
+    # If both Start Time and End Time are null/empty, set Work Description to empty
+    work_description = ''
+    if not is_holiday:
+        if start_time or end_time:  # If at least one time exists
+            work_description = all_work_descs
+        # else: work_description remains empty when both times are null
+
     return {
         'Date': datetime.strptime(record.get('Date',''), '%Y-%m-%d').strftime('%a, %b %-d, %Y'),
         'Activity': activity,
@@ -335,9 +346,9 @@ def format_single_nocodb_record(record, all_work_descs, employee_role=None):
         'Internal Project ID': '' if is_holiday else get_field('Internal Project ID'),
         'Customer Name/ID': '' if is_holiday else get_field('Customer Name/ID'),
         'PO/Contract No': '' if is_holiday else get_field('PO/Contract No'),
-        'Work Description': '' if is_holiday else all_work_descs,
-        'Start Time': '' if is_holiday else get_time('Start Time'),
-        'End Time': '' if is_holiday else get_time('End Time'),
+        'Work Description': work_description,
+        'Start Time': '' if is_holiday else start_time,
+        'End Time': '' if is_holiday else end_time,
         'Break Hours': '' if is_holiday else get_numeric('Break Hours'),
         'Total Hours': '' if is_holiday else get_numeric('Total Hours'),
         'Over Time Hours': '' if is_holiday else get_numeric('Over Time Hours'),
@@ -742,7 +753,8 @@ async def _generate_dev_kualitas_data(request: Request, records: list, month_nam
         status = record.get('Status', 'N/A')
         start_date = record.get('Start Date', '')
         end_date = record.get('End Date', '')
-        pencapaian = record.get('Pencapaian', 0)
+        # pencapaian = record.get('Pencapaian', 0)
+        pencapaian = 100
 
         formatted_start = start_date.replace('-', '/') if start_date else 'N/A'
         formatted_end = end_date.replace('-', '/') if end_date else 'N/A'
@@ -1577,11 +1589,20 @@ async def generate_plan(
 
                 # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
                 if (employee_role == "IoT Operations" or
-                    employee_nrp in ["JIMT24011", "JIMT24012"]):
+                    employee_nrp in ["JIMT24011", "JIMT24012", "JIMT24001"]):
                     employee_mapping[name] = info
         elif type == "developer":
             role_filter = "Developer"
-            employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
+            all_devs = nocodb_employee.get_all_employees(role_filter=role_filter)
+            employee_mapping = {}
+
+            # Exclude NRPs that are already included in IoT Operations report
+            excluded_nrps = ["JIMT24011", "JIMT24012", "JIMT24001"]
+
+            for name, info in all_devs.items():
+                employee_nrp = info.get('nrp', '').strip()
+                if employee_nrp not in excluded_nrps:
+                    employee_mapping[name] = info
         else:
             employee_mapping = nocodb_employee.get_all_employees()
 
@@ -1643,14 +1664,52 @@ async def generate_plan(
             })
             section_id += 1
 
-        # Evidence section
+        # Main Evidence section header
         sections_plan.append({
             "id": section_id,
-            "type": "evidence",
-            "title": "3. Evidence Aktivitas",
+            "type": "evidence_header",
+            "title": "3. Evidence",
             "status": "pending"
         })
         section_id += 1
+
+        # Pre-fetch evidence records to create a section for each
+        evidence_type_param = "iotoperations" if type == "iotoperation" else "developer"
+        evidence_records = await _get_all_evidence_records(evidence_type_param, month)
+        
+        evidence_counter = 1
+        for record in evidence_records:
+            task_list = record.get('Task List', 'No Task Description')
+            evidence_task = record.get('Evidence Task', [])
+            image_urls = []
+
+            if evidence_task and isinstance(evidence_task, list):
+                for attachment in evidence_task:
+                    if isinstance(attachment, dict):
+                        signed_path = attachment.get('signedPath')
+                        if signed_path:
+                            full_url = f"{config.NOCODB_BASE_URL.rstrip('/')}/{signed_path}"
+                            image_urls.append(full_url)
+            
+            if image_urls:
+                # Create a new section for each evidence item
+                sections_plan.append({
+                    "id": section_id,
+                    "type": "evidence",
+                    "title": f"3.{evidence_counter}. {task_list}",
+                    "status": "pending",
+                    # Store the necessary data to generate this section later
+                    "data": {
+                        "number": evidence_counter,
+                        "title": task_list,
+                        "image_path": image_urls[0],
+                        "description": task_list,
+                        "type": evidence_type_param,
+                        "month_name": _get_month_name(month)
+                    }
+                })
+                section_id += 1
+                evidence_counter += 1
 
         # Main Attendance section header
         sections_plan.append({
@@ -1766,9 +1825,25 @@ async def generate_section(
             if section_content:
                 section_content["title"] = section["title"]  # Use plan title
 
+        elif section["type"] == "evidence_header":
+            section_content = {
+                'type': 'evidence_header',
+                'title': '3. Evidence',
+                'content': ''
+            }
+        
         elif section["type"] == "evidence":
-            evidence_type_param = "iotoperations" if plan["type"] == "iotoperation" else "developer"
-            section_content = await _get_evidence_html_section(evidence_type_param, plan["month"], request)
+            # The data for the single evidence item is already in the plan
+            section_data = section.get("data")
+            if section_data:
+                html_content = await _generate_single_evidence_section(section_data, request)
+                section_content = {
+                    'type': 'evidence',
+                    'title': section.get("title"),
+                    'content': html_content
+                }
+            else:
+                section_content = None
 
         elif section["type"] == "attendance_header":
             section_content = {
@@ -1898,7 +1973,7 @@ async def _generate_single_timesheet_section(employee_name: str, month: int, yea
 
                 # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
                 if (employee_role == "IoT Operations" or
-                    employee_nrp in ["JIMT24011", "JIMT24012"]):
+                    employee_nrp in ["JIMT24011", "JIMT24012", "JIMT24001"]):
                     employee_mapping[name] = info
         else:
             role_filter = "Developer"
@@ -1977,7 +2052,7 @@ async def _generate_single_attendance_section(employee_name: str, month: int, ye
 
                 # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
                 if (employee_role == "IoT Operations" or
-                    employee_nrp in ["JIMT24011", "JIMT24012"]):
+                    employee_nrp in ["JIMT24011", "JIMT24012", "JIMT24001"]):
                     employee_mapping[name] = info
         else:
             role_filter = "Developer"
@@ -2153,7 +2228,7 @@ async def _get_timesheet_html_sections(month: int, year: int, report_type: str, 
 
             # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
             if (employee_role == "IoT Operations" or
-                employee_nrp in ["JIMT24011", "JIMT24012"]):
+                employee_nrp in ["JIMT24011", "JIMT24012", "JIMT24001"]):
                 employee_mapping[name] = info
     elif report_type == "developer":
         role_filter = "Developer"
@@ -2492,7 +2567,7 @@ async def _get_attendance_html_section(month: int, year: int, report_type: str, 
 
             # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
             if (employee_role == "IoT Operations" or
-                employee_nrp in ["JIMT24011", "JIMT24012"]):
+                employee_nrp in ["JIMT24011", "JIMT24012", "JIMT24001"]):
                 employee_mapping[name] = info
     elif report_type == "developer":
         role_filter = "Developer"
@@ -3017,6 +3092,76 @@ async def export_attendance_celerates_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+async def _get_all_evidence_records(evidence_type: str, month: int):
+    """Get all evidence records for planning purposes"""
+    indonesian_months = {
+        1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+        5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+        9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+    }
+
+    month_name = indonesian_months[month]
+
+    if evidence_type == "iotoperations":
+        table_key = "tasklist_iot"
+    elif evidence_type == "developer":
+        table_key = "tasklist"
+    else:
+        return []
+
+    table_id = config.NOCODB_TABLES.get(table_key)
+    if not table_id:
+        return []
+
+    nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
+    where_clause = f"(Month,eq,{month_name})~and(Evidence Task,notnull)"
+    response = nocodb.get_records(limit=2000, where=where_clause)
+    records = response.get('list', []) if response else []
+
+    return records
+
+async def _generate_single_evidence_section(section_data: dict, request: Request):
+    """Generate HTML content for a single evidence item"""
+    try:
+        # Create evidence data list with single item
+        evidence_data = [{
+            "number": section_data["number"],
+            "title": section_data["title"],
+            "image_path": section_data["image_path"],
+            "description": section_data["description"]
+        }]
+
+        template = templates.get_template('evidence/evidence_aktivitas.html')
+        html_content = template.render({
+            "request": request,
+            "evidence_data": evidence_data,
+            "type": section_data["type"],
+            "month": section_data["month_name"]
+        })
+
+        # Extract body content and wrap in evidence section
+        import re
+        body_content = re.search(r'<body[^>]*>(.*?)</body>', html_content, re.DOTALL)
+        if body_content:
+            isolated_content = f'<div class="evidence-section">{body_content.group(1)}</div>'
+        else:
+            isolated_content = f'<div class="evidence-section">{html_content}</div>'
+
+        return str(isolated_content)
+
+    except Exception as e:
+        print(f"❌ Error generating single evidence section: {e}")
+        return f'<div class="evidence-section">Error generating evidence content: {str(e)}</div>'
+
+def _get_month_name(month: int) -> str:
+    """Get Indonesian month name from month number"""
+    indonesian_months = {
+        1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+        5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+        9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+    }
+    return indonesian_months.get(month, 'Unknown')
 
 @app.get("/health")
 async def health_check():
