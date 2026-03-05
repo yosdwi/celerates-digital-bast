@@ -1,7 +1,7 @@
 from datetime import datetime
 from src import config
-from src.classes.ClsTimesheet import ClsTimesheet
-from src.classes.ClsNocoDBProcessor import ClsNocoDBProcessor
+from src.classes.ClsTimesheetOptimized import ClsTimesheetOptimized
+from src.classes.ClsPostgreSQLProcessor import ClsPostgreSQLProcessor
 from src.utils.date_helper import get_configured_month_dates, get_month_name_from_date
 
 def run():
@@ -18,14 +18,14 @@ def run():
     if not all([employee_table, attendance_table, tasklist_table, timesheet_table, tasklist_iot_table, schedule_shifting_table, calendar_table]):
         raise ValueError("ID tabel yang dibutuhkan untuk membuat timesheet tidak lengkap.")
 
-    nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
-    nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
-    nocodb_tasklist = ClsNocoDBProcessor(config.APP_BASE_ID, tasklist_table)
-    nocodb_iot_tasklist = ClsNocoDBProcessor(config.APP_BASE_ID, tasklist_iot_table)
-    nocodb_timesheet = ClsNocoDBProcessor(config.APP_BASE_ID, timesheet_table)
-    nocodb_schedule_shifting = ClsNocoDBProcessor(config.APP_BASE_ID, schedule_shifting_table)
-    nocodb_calendar = ClsNocoDBProcessor(config.APP_BASE_ID, calendar_table)
-    timesheet_generator = ClsTimesheet()
+    nocodb_employee = ClsPostgreSQLProcessor(config.APP_BASE_ID, employee_table)
+    nocodb_attendance = ClsPostgreSQLProcessor(config.APP_BASE_ID, attendance_table)
+    nocodb_tasklist = ClsPostgreSQLProcessor(config.APP_BASE_ID, tasklist_table)
+    nocodb_iot_tasklist = ClsPostgreSQLProcessor(config.APP_BASE_ID, tasklist_iot_table)
+    nocodb_timesheet = ClsPostgreSQLProcessor(config.APP_BASE_ID, timesheet_table)
+    nocodb_schedule_shifting = ClsPostgreSQLProcessor(config.APP_BASE_ID, schedule_shifting_table)
+    nocodb_calendar = ClsPostgreSQLProcessor(config.APP_BASE_ID, calendar_table)
+    timesheet_generator = ClsTimesheetOptimized()
 
     try:
         employee_mapping = nocodb_employee.get_all_employees()
@@ -80,8 +80,7 @@ def run():
                 target_date=target_date,
                 attendance_records=attendance_records,
                 tasklist_records=iot_tasklist_records,
-                task_field_name="Task List IoT Table",
-                schedule_records=schedule_shifting_records
+                task_field_name="Task List IoT Table"
             )
             if iot_timesheet_data:
                 print(f"Generated {len(iot_timesheet_data)} timesheet records for IoT employees")

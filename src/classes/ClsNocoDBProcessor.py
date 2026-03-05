@@ -568,17 +568,6 @@ class ClsNocoDBProcessor:
             for record in records:
                 processed_count += 1
 
-                # Check if Created by is NOT system@system.com
-                created_by = record.get('Created by', {})
-                if isinstance(created_by, dict):
-                    creator_email = created_by.get('email', '')
-                else:
-                    creator_email = str(created_by) if created_by else ''
-
-                # Skip if it's system created
-                if 'system@system.com' in creator_email:
-                    continue
-
                 # Check if Date and Employee Data exist
                 date_value = record.get('Date')
                 employee_data = record.get('Employee Data')

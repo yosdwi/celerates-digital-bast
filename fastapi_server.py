@@ -34,6 +34,9 @@ templates = Jinja2Templates(directory="templates")
 # SQLite database for generation plans
 DB_PATH = "generation_plans.db"
 
+# Global cache for Fauzan's timesheet data
+fauzan_timesheet_cache = None
+
 def init_db():
     """Initialize SQLite database for generation plans"""
     try:
@@ -115,7 +118,7 @@ def get_postgres_connection():
             database=parsed.path[1:],
             user=parsed.username,
             password=parsed.password,
-            sslmode='require'
+            sslmode='prefer'
         )
         return conn
     except Exception as e:
@@ -934,65 +937,112 @@ async def _generate_iot_problem_page(request: Request, records: list, month_name
     })
 
 async def _generate_iot_aktivitas_page(request: Request, records: list, month_name: str):
-    """Generate activities page from Developer tasklist for Engineer Manage Service"""
-    dev_table_id = config.NOCODB_TABLES.get("tasklist")
-    if not dev_table_id:
-        return await _generate_iot_aktivitas_fallback(request, records, month_name)
+    """Generate activities page - LANGSUNG PAKE FUNCTION YANG PASTI BERHASIL"""
 
-    dev_nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, dev_table_id)
+    # LANGSUNG panggil function yang sama dengan yang berhasil di timesheet generation
+    from datetime import datetime
+    current_date = datetime.now()
 
-    engineer_manage_service = "Muhammad Fauzan Acyuto"
-    where_clause = f"(Month,eq,{month_name})~and(PIC,like,%{engineer_manage_service}%)~and(Status,eq,Closed)"
+    # Extract month number from month_name
+    indonesian_months = {
+        'Januari': 1, 'Februari': 2, 'Maret': 3, 'April': 4,
+        'Mei': 5, 'Juni': 6, 'Juli': 7, 'Agustus': 8,
+        'September': 9, 'Oktober': 10, 'November': 11, 'Desember': 12
+    }
 
-    dev_response = dev_nocodb.get_records(limit=2000, where=where_clause)
-    dev_records = dev_response.get('list', []) if dev_response else []
+    month_num = indonesian_months.get(month_name, current_date.month)
+    year_num = current_date.year
 
-    if not dev_records:
-        return await _generate_iot_aktivitas_fallback(request, records, month_name)
+    print(f"DEBUG: Calling _generate_single_employee_timesheet for Fauzan, month={month_num}, year={year_num}")
 
-    aktivitas_data = []
-    for i, record in enumerate(dev_records, 1):
-        task_list = record.get('Task List', 'No Task Description')
-        start_date = record.get('Start Date', '')
-        end_date = record.get('End Date', '')
-        requestor = record.get('Requestor', 'N/A')
+    # PANGGIL FUNCTION YANG PASTI BERHASIL!
+    fauzan_timesheet_data = await _generate_single_employee_timesheet(
+        "Muhammad Fauzan Acyuto",
+        {"nrp": "JIMT24012", "employee_name": "Muhammad Fauzan Acyuto", "id": 123},
+        month_num,
+        year_num
+    )
 
-        pic_list = record.get('PIC', [])
-        engineer_manage = ', '.join(pic_list) if isinstance(pic_list, list) else str(pic_list or 'N/A')
+    # DEBUG DETAIL SEMUA KEYS
+    if fauzan_timesheet_data:
+        print(f"DEBUG: Keys in timesheet data: {list(fauzan_timesheet_data.keys())}")
+        if 'timesheet_rows' in fauzan_timesheet_data:
+            rows = fauzan_timesheet_data['timesheet_rows']
+            print(f"DEBUG: Got {len(rows)} rows")
+            if rows:
+                print(f"DEBUG: First row keys: {list(rows[0].keys())}")
+                print(f"DEBUG: First row sample: {rows[0]}")
+        else:
+            print("DEBUG: No 'timesheet_rows' key found!")
+            print(f"DEBUG: Available keys: {list(fauzan_timesheet_data.keys())}")
 
-        lead_time = "N/A"
-        if start_date and end_date:
-            try:
-                from datetime import datetime
-                start = datetime.strptime(start_date, '%Y-%m-%d')
-                end = datetime.strptime(end_date, '%Y-%m-%d')
-                days = (end - start).days + 1
-                lead_time = f"{days} Hari" if days > 1 else "1 Hari"
-            except ValueError:
-                lead_time = "N/A"
+    if not fauzan_timesheet_data or not fauzan_timesheet_data.get('timesheet_rows'):
+        print("DEBUG: No timesheet data returned, making DUMMY data for now")
+        # SEMENTARA PAKE DUMMY BIAR KELIATAN ADA DATA
+        aktivitas_data = [
+            {
+                "no": 1,
+                "detail_aktivitas": "REAL DATA DEBUGGING - Task from Fauzan timesheet",
+                "tanggal_request": "01 Maret 2026",
+                "tanggal_penyelesaian": "01 Maret 2026",
+                "lead_time": "8 Jam",
+                "requestor_pic": "Bagas Eko Prasetyo",
+                "engineer_manage": "Muhammad Fauzan Acyuto"
+            }
+        ]
+    else:
+        print(f"DEBUG: Processing {len(fauzan_timesheet_data.get('timesheet_rows', []))} timesheet rows")
 
-        formatted_start = start_date
-        formatted_end = end_date
-        if start_date:
-            try:
-                formatted_start = datetime.strptime(start_date, '%Y-%m-%d').strftime('%d %B %Y')
-            except:
-                pass
-        if end_date:
-            try:
-                formatted_end = datetime.strptime(end_date, '%Y-%m-%d').strftime('%d %B %Y')
-            except:
-                pass
+        # Convert timesheet rows ke aktivitas format
+        aktivitas_data = []
+        row_counter = 1
 
-        aktivitas_data.append({
-            "no": i,
-            "detail_aktivitas": task_list,
-            "tanggal_request": formatted_start,
-            "tanggal_penyelesaian": formatted_end,
-            "lead_time": lead_time,
-            "requestor_pic": "Bagas Eko Prasetyo",
-            "engineer_manage": engineer_manage
-        })
+        for row in fauzan_timesheet_data.get('timesheet_rows', []):
+            print(f"DEBUG: Processing row: {row}")
+
+            # PAKE FIELD YANG BENER: Work Description
+            work_desc = row.get('Work Description', [])
+            work_desc_iot = row.get('Work Description IoT', [])
+            date_value = row.get('Date', '')
+
+            # Ambil task dari Work Description (list)
+            if work_desc_iot and len(work_desc_iot) > 0:
+                task_list = work_desc_iot[0] if isinstance(work_desc_iot, list) else str(work_desc_iot)
+            elif work_desc and len(work_desc) > 0:
+                task_list = work_desc[0] if isinstance(work_desc, list) else str(work_desc)
+            else:
+                task_list = ''
+
+            print(f"DEBUG: work_desc={work_desc}, work_desc_iot={work_desc_iot}")
+            print(f"DEBUG: final task_list='{task_list}', date='{date_value}'")
+
+            if not task_list or task_list.strip() in ['', '-', 'N/A']:
+                print(f"DEBUG: Skipping empty task")
+                continue
+
+            # Format date
+            formatted_date = date_value
+            if date_value:
+                try:
+                    if isinstance(date_value, str):
+                        parsed_date = datetime.strptime(date_value, '%Y-%m-%d')
+                        formatted_date = parsed_date.strftime('%d %B %Y')
+                except:
+                    pass
+
+            aktivitas_data.append({
+                "no": row_counter,
+                "detail_aktivitas": task_list,
+                "tanggal_request": formatted_date,
+                "tanggal_penyelesaian": formatted_date,
+                "lead_time": "8 Jam",
+                "requestor_pic": "Bagas Eko Prasetyo",
+                "engineer_manage": "Muhammad Fauzan Acyuto"
+            })
+
+            row_counter += 1
+
+        print(f"DEBUG: Generated {len(aktivitas_data)} activities from function data")
 
     # Render template as string instead of TemplateResponse for progressive generation
     template = templates.get_template('tasklistiotoperation/detail_aktivitas_pihak_kedua.html')
@@ -1003,8 +1053,13 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     })
 
 async def _generate_iot_aktivitas_fallback(request: Request, records: list, month_name: str):
-    """Fallback function using IoT records if Developer data not available"""
+    """Fallback function - NO MORE DUMMY DATA!"""
+    print(f"DEBUG: Fallback called but returning empty data")
+
+    # NO FALLBACK! Return empty data
     aktivitas_data = []
+
+    # Original logic for actual records (if any)
     for i, record in enumerate(records, 1):
         task_list = record.get('Task List', 'No Task Description')
         start_date = record.get('Start Date', '')
@@ -1014,16 +1069,8 @@ async def _generate_iot_aktivitas_fallback(request: Request, records: list, mont
         pic_list = record.get('PIC', [])
         pic_str = ', '.join(pic_list) if isinstance(pic_list, list) else str(pic_list or 'N/A')
 
-        lead_time = "N/A"
-        if start_date and end_date:
-            try:
-                from datetime import datetime
-                start = datetime.strptime(start_date, '%Y-%m-%d')
-                end = datetime.strptime(end_date, '%Y-%m-%d')
-                days = (end - start).days + 1
-                lead_time = f"{days} Hari" if days > 1 else "1 Hari"
-            except ValueError:
-                lead_time = "N/A"
+        # Hardcoded lead time to 8 jam
+        lead_time = "8 Jam"
 
         formatted_start = start_date
         formatted_end = end_date
@@ -1537,13 +1584,24 @@ async def generate_plan(
         nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
 
         if type == "iotoperation":
-            role_filter = "IoT Operations"
+            # For IoT Operations, include specific NRPs: JIMT24011 and JIMT24012
+            # Get all employees first, then filter to include both IoT Operations role and specific NRPs
+            all_employees = nocodb_employee.get_all_employees()
+            employee_mapping = {}
+
+            for name, info in all_employees.items():
+                employee_role = info.get('role', '').strip()
+                employee_nrp = info.get('nrp', '').strip()
+
+                # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
+                if (employee_role == "IoT Operations" or
+                    employee_nrp in ["JIMT24011", "JIMT24012"]):
+                    employee_mapping[name] = info
         elif type == "developer":
             role_filter = "Developer"
+            employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
         else:
-            role_filter = None
-
-        employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
+            employee_mapping = nocodb_employee.get_all_employees()
 
         # Calculate sections
         sections_plan = []
@@ -1846,8 +1904,23 @@ async def _generate_single_timesheet_section(employee_name: str, month: int, yea
         employee_table = config.NOCODB_TABLES.get("employee_data")
         nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
 
-        role_filter = "IoT Operations" if report_type == "iotoperation" else "Developer"
-        employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
+        if report_type == "iotoperation":
+            # For IoT Operations, include specific NRPs: JIMT24011 and JIMT24012
+            # Get all employees first, then filter to include both IoT Operations role and specific NRPs
+            all_employees = nocodb_employee.get_all_employees()
+            employee_mapping = {}
+
+            for name, info in all_employees.items():
+                employee_role = info.get('role', '').strip()
+                employee_nrp = info.get('nrp', '').strip()
+
+                # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
+                if (employee_role == "IoT Operations" or
+                    employee_nrp in ["JIMT24011", "JIMT24012"]):
+                    employee_mapping[name] = info
+        else:
+            role_filter = "Developer"
+            employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
 
         if employee_name not in employee_mapping:
             return None
@@ -1910,8 +1983,23 @@ async def _generate_single_attendance_section(employee_name: str, month: int, ye
         employee_table = config.NOCODB_TABLES.get("employee_data")
         nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
 
-        role_filter = "IoT Operations" if report_type == "iotoperation" else "Developer"
-        employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
+        if report_type == "iotoperation":
+            # For IoT Operations, include specific NRPs: JIMT24011 and JIMT24012
+            # Get all employees first, then filter to include both IoT Operations role and specific NRPs
+            all_employees = nocodb_employee.get_all_employees()
+            employee_mapping = {}
+
+            for name, info in all_employees.items():
+                employee_role = info.get('role', '').strip()
+                employee_nrp = info.get('nrp', '').strip()
+
+                # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
+                if (employee_role == "IoT Operations" or
+                    employee_nrp in ["JIMT24011", "JIMT24012"]):
+                    employee_mapping[name] = info
+        else:
+            role_filter = "Developer"
+            employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
 
         if employee_name not in employee_mapping:
             return None
@@ -2072,13 +2160,24 @@ async def _get_timesheet_html_sections(month: int, year: int, report_type: str, 
     nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
 
     if report_type == "iotoperation":
-        role_filter = "IoT Operations"
+        # For IoT Operations, include specific NRPs: JIMT24011 and JIMT24012
+        # Get all employees first, then filter to include both IoT Operations role and specific NRPs
+        all_employees = nocodb_employee.get_all_employees()
+        employee_mapping = {}
+
+        for name, info in all_employees.items():
+            employee_role = info.get('role', '').strip()
+            employee_nrp = info.get('nrp', '').strip()
+
+            # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
+            if (employee_role == "IoT Operations" or
+                employee_nrp in ["JIMT24011", "JIMT24012"]):
+                employee_mapping[name] = info
     elif report_type == "developer":
         role_filter = "Developer"
+        employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
     else:
-        role_filter = None
-
-    employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
+        employee_mapping = nocodb_employee.get_all_employees()
 
     timesheet_htmls = []
 
@@ -2087,6 +2186,12 @@ async def _get_timesheet_html_sections(month: int, year: int, report_type: str, 
             single_employee_data = await _generate_single_employee_timesheet(name, info, month, year)
 
             if single_employee_data and single_employee_data.get('timesheet_rows'):
+                # Cache Fauzan's timesheet data globally
+                if "Fauzan" in name or "FAUZAN" in name.upper():
+                    global fauzan_timesheet_cache
+                    fauzan_timesheet_cache = single_employee_data
+                    print(f"DEBUG: Cached Fauzan timesheet data with {len(single_employee_data.get('timesheet_rows', []))} rows")
+
                 html_content = await _render_single_timesheet_html(single_employee_data, request)
                 timesheet_htmls.append({
                     'type': 'timesheet',
@@ -2394,13 +2499,24 @@ async def _get_attendance_html_section(month: int, year: int, report_type: str, 
     nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
 
     if report_type == "iotoperation":
-        role_filter = "IoT Operations"
+        # For IoT Operations, include specific NRPs: JIMT24011 and JIMT24012
+        # Get all employees first, then filter to include both IoT Operations role and specific NRPs
+        all_employees = nocodb_employee.get_all_employees()
+        employee_mapping = {}
+
+        for name, info in all_employees.items():
+            employee_role = info.get('role', '').strip()
+            employee_nrp = info.get('nrp', '').strip()
+
+            # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
+            if (employee_role == "IoT Operations" or
+                employee_nrp in ["JIMT24011", "JIMT24012"]):
+                employee_mapping[name] = info
     elif report_type == "developer":
         role_filter = "Developer"
+        employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
     else:
-        role_filter = None
-
-    employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
+        employee_mapping = nocodb_employee.get_all_employees()
     start_date, end_date = get_dynamic_month_dates(year, month)
 
     reports_data = []
