@@ -468,252 +468,6 @@ async def admin_index(request: Request):
         "attendance_data": None  # Use None to indicate it's the initial load
     })
 
-@app.post("/report/pama/attendance")
-async def generate_pama_attendance_report(
-    request: Request,
-    year: int = Form(...),
-    month: int = Form(...)
-):
-    """
-    Generates and serves a consolidated attendance report for ALL employees
-    """
-    try:
-        current_year = datetime.now().year
-        if year < 2020 or year > current_year + 1:
-            raise HTTPException(400, "Invalid year")
-        if month < 1 or month > 12:
-            raise HTTPException(400, "Invalid month")
-
-    except ValueError:
-        raise HTTPException(400, "Invalid year/month format")
-
-    employee_table = config.NOCODB_TABLES.get("employee_data")
-    attendance_table = config.NOCODB_TABLES.get("attendance")
-    if not all([employee_table, attendance_table]):
-        raise HTTPException(500, "Server configuration error for data tables")
-
-    nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
-    nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
-
-    employee_mapping = nocodb_employee.get_all_employees()
-    if not employee_mapping:
-        raise HTTPException(404, "No employee data found")
-
-    start_date, end_date = get_dynamic_month_dates(year, month)
-
-    reports_data = []
-    for name, info in employee_mapping.items():
-        display_nrp = info.get('nrp') or info.get('employee_id')
-        if not display_nrp:
-            continue
-
-        where_clause = f"(Name,like,%{name.strip().title()}%)"
-        response = nocodb_attendance.get_records(limit=2000, where=where_clause)
-        records = response.get('list', []) if response else []
-
-        attendance_data = []
-        for rec in records:
-            rec_date_str = rec.get('Date')
-            if not rec_date_str: continue
-
-            rec_date = datetime.strptime(rec_date_str, '%Y-%m-%d').date()
-            if start_date.date() <= rec_date <= end_date.date():
-                attendance_data.append({
-                    'nrp': display_nrp,
-                    'nama': name,
-                    'tanggal_kehadiran': rec_date.strftime('%d/%m/%Y'),
-                    'jam_kehadiran': format_attendance_time(rec.get('Start Time'), rec.get('End Time'))
-                })
-
-        if not attendance_data:
-            continue
-
-        attendance_data.sort(key=lambda x: datetime.strptime(x['tanggal_kehadiran'], '%d/%m/%Y'))
-
-        reports_data.append({
-            'nrp': display_nrp,
-            'nama': name.upper(),
-            'attendance_rows': attendance_data
-        })
-
-    final_context = {
-        'periode': f"{start_date.strftime('%d %B %Y')} - {end_date.strftime('%d %B %Y')}",
-        'dicetak': datetime.now().strftime('%d %B %Y %H:%M:%S'),
-        'reports': reports_data,
-        'logo_url': '/admin/static/img/logo_pama.png'
-    }
-
-    return templates.TemplateResponse('attendance_report_template.html', {
-        "request": request,
-        **final_context
-    })
-
-@app.post("/report/timesheet")
-async def generate_timesheet_report(
-    request: Request,
-    year: int = Form(...),
-    month: int = Form(...)
-):
-    """
-    Generates and serves a consolidated timesheet report for ALL employees.
-    """
-    try:
-        current_year = datetime.now().year
-        if year < 2020 or year > current_year + 1:
-            raise HTTPException(400, "Invalid year")
-        if month < 1 or month > 12:
-            raise HTTPException(400, "Invalid month")
-    except ValueError:
-        raise HTTPException(400, "Invalid year/month format")
-
-    employee_table = config.NOCODB_TABLES.get("employee_data")
-    timesheet_table = config.NOCODB_TABLES.get("timesheet")
-    if not all([employee_table, timesheet_table]):
-        raise HTTPException(500, "Server configuration error for data tables")
-
-    nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
-    nocodb_timesheet = ClsNocoDBProcessor(config.APP_BASE_ID, timesheet_table)
-
-    employee_mapping = nocodb_employee.get_all_employees()
-    if not employee_mapping:
-        raise HTTPException(404, "No employee data found")
-
-    indonesian_months = {
-        1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
-        5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
-        9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
-    }
-    month_name = indonesian_months[month]
-    
-    reports_data = []
-    for name, info in employee_mapping.items():
-        where = f"(Calendar Month,eq,{month_name})~and(Employee Name,like,%{name}%)"
-        response = nocodb_timesheet.get_records(limit=2000, where=where)
-        records = response.get('list', [])
-        
-        records_by_date = {r['Date']: r for r in records if 'Date' in r}
-        
-        employee_role = info.get('role')
-        work_desc_field = 'Work Description IoT' if employee_role == 'IoT Operations' else 'Work Description'
-        # Get unique work descriptions, limit to 6 tasks max
-        unique_work_descs = sorted({str(d).strip() for r in records for d in r.get(work_desc_field, []) if str(d).strip()})
-        all_work_descs = '; '.join(unique_work_descs[:6])
-
-        start_date, end_date = get_dynamic_month_dates(year, month)
-        
-        full_month_data = []
-        current_date = start_date
-        while current_date <= end_date:
-            date_str = current_date.strftime('%Y-%m-%d')
-            record = records_by_date.get(date_str)
-            
-            if record:
-                formatted_row = format_single_nocodb_record(record, all_work_descs, employee_role)
-            else:
-                formatted_row = {
-                    'Date': current_date.strftime('%a, %b %-d, %Y'), 'Activity': '', 'Project Name': '', 
-                    'Internal Project ID': '', 'Customer Name/ID': '', 'PO/Contract No': '', 
-                    'Work Description': '', 'Start Time': '', 'End Time': '', 'Break Hours': '', 
-                    'Total Hours': '', 'Over Time Hours': '', 'Regular Hours': '', 'Is Holiday': '',
-                    'Remarks': 'Weekend' if current_date.weekday() >= 5 else '',
-                    'IsManualEdit': False
-                }
-            full_month_data.append(formatted_row)
-            current_date += timedelta(days=1)
-        
-        if not any(row['Activity'] for row in full_month_data):
-            continue
-
-        total_break_hours = sum(float(row.get('Break Hours', 0) or 0) for row in full_month_data if row.get('Break Hours'))
-        total_hours = sum(float(row.get('Total Hours', 0) or 0) for row in full_month_data if row.get('Total Hours'))
-        total_overtime_hours = sum(float(row.get('Over Time Hours', 0) or 0) for row in full_month_data if row.get('Over Time Hours'))
-        total_regular_hours = sum(float(row.get('Regular Hours', 0) or 0) for row in full_month_data if row.get('Regular Hours'))
-
-        reports_data.append({
-            'nama': name.upper(),
-            'nrp': info.get('nrp') or info.get('employee_id', 'N/A'),
-            'employee_id': info.get('employee_id', 'N/A'),
-            'posisi': info.get('position', 'N/A'),
-            'start_date': f"Thu, {month_name} 01, {year}",
-            'end_date': f"Sat, {month_name} {end_date.day:02d}, {year}",
-            'total_break_hours': f"{total_break_hours:.2f}",
-            'total_hours': f"{total_hours:.2f}",
-            'total_overtime_hours': f"{total_overtime_hours:.2f}",
-            'total_regular_hours': f"{total_regular_hours:.2f}",
-            'timesheet_rows': full_month_data
-        })
-
-    final_context = {
-        'periode': f"{month_name} {year}",
-        'reports': reports_data,
-        'logo_url': '/admin/static/img/logo_pama.png'
-    }
-
-    return templates.TemplateResponse('timesheet_report_template.html', {
-        "request": request,
-        **final_context
-    })
-
-
-@app.post("/report/tasklistdeveloper")
-async def generate_tasklistdeveloper_report(
-    request: Request,
-    page: str = Form(...),
-    month: int = Form(...)
-):
-    """
-    Generates Developer tasklist report from NocoDB data.
-
-    Args:
-        page: "pelaksanaan", "kualitas", "rilis", or "support"
-        month: Month number (1-12) from form
-    """
-    if month < 1 or month > 12:
-        raise HTTPException(400, "Invalid month")
-
-    if page not in ["pelaksanaan", "kualitas", "rilis", "support"]:
-        raise HTTPException(400, "Page must be 'pelaksanaan', 'kualitas', 'rilis', or 'support'")
-
-    indonesian_months = {
-        1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
-        5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
-        9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
-    }
-
-    month_name = indonesian_months[month]
-
-    if page == "pelaksanaan":
-        return await _generate_dev_pelaksanaan_page(request, month_name)
-    else:
-        return await _generate_dev_kategori_page(request, page, month_name)
-
-async def _generate_dev_pelaksanaan_page(request: Request, month_name: str):
-    """Generate pelaksanaan page with static SLA data"""
-    pelaksanaan_data = [
-        {
-            "sla": "Kualitas Kode",
-            "parameter": "95% fitur yang dirilis bebas dari bug mayor",
-            "pencapaian": "100"
-        },
-        {
-            "sla": "Waktu Rilis",
-            "parameter": "2 minggu untuk fitur minor dan selambatnya 4-6 minggu untuk fitur mayor,",
-            "pencapaian": "100"
-        },
-        {
-            "sla": "Dukungan Support",
-            "parameter": "95% permintaan dukungan diselesaikan dalam target waktu yang ditetapkan",
-            "pencapaian": "100"
-        }
-    ]
-
-    # Render template as string instead of TemplateResponse for progressive generation
-    template = templates.get_template('tasklistdeveloper/pelaksanaan_pekerjaan.html')
-    return template.render({
-        "request": request,
-        "pelaksanaan_data": pelaksanaan_data,
-        "month": month_name
-    })
 
 async def _generate_dev_kategori_page(request: Request, page: str, month_name: str):
     """Generate kategori-based pages from NocoDB data"""
@@ -733,7 +487,10 @@ async def _generate_dev_kategori_page(request: Request, page: str, month_name: s
     if not kategori_name:
         raise HTTPException(400, f"Invalid page: {page}")
 
-    where_clause = f"(Month,eq,{month_name})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
+    # Use Unique_Key filtering for month-specific records
+    current_year = datetime.now().year
+    year_month_pattern = f"{current_year}-{month:02d}-"
+    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
 
@@ -895,7 +652,10 @@ async def generate_tasklistiotoperation_report(
 
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
-    where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
+    # Use Unique_Key filtering for month-specific records
+    current_year = datetime.now().year
+    year_month_pattern = f"{current_year}-{month:02d}-"
+    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Status,eq,Closed)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
 
@@ -956,10 +716,21 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     from datetime import datetime
     from src.classes.ClsPostgreSQLProcessor import ClsPostgreSQLProcessor
 
+    # Convert month name to month number for Unique_Key pattern
+    month_mapping = {
+        'Januari': 1, 'Februari': 2, 'Maret': 3, 'April': 4,
+        'Mei': 5, 'Juni': 6, 'Juli': 7, 'Agustus': 8,
+        'September': 9, 'Oktober': 10, 'November': 11, 'Desember': 12
+    }
+
+    month = month_mapping.get(month_name, 1)
+    current_year = datetime.now().year
+    year_month_pattern = f"{current_year}-{month:02d}-"
+
     # Get tasklist developer data for Fauzan
     tasklist_table = config.NOCODB_TABLES.get("tasklist")
 
-    # Get Fauzan's tasks directly from database (PostgreSQL processor has issues with underscores)
+    # Get Fauzan's tasks directly from database using Unique_Key pattern
     import psycopg2
 
     conn = psycopg2.connect(config.DB_URL)
@@ -968,10 +739,10 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     cursor.execute('''
     SELECT "Task_List", "Start_Date", "End_Date", "Requestor"
     FROM "pc38r6u1npuq0ul"."Tasklist Developer"
-    WHERE "Id_Key" LIKE '2026-01%100'
+    WHERE "Unique_Key" LIKE %s
     AND "Status" = 'Closed'
     ORDER BY "Start_Date"
-    ''')
+    ''', (f'{year_month_pattern}%_100',))
 
     task_rows = cursor.fetchall()
     cursor.close()
@@ -1133,12 +904,10 @@ async def generate_evidence_report(
 
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
-    # Use date range filtering instead of month name
+    # Use Unique_Key filtering for month-specific records with evidence
     current_year = datetime.now().year
-    start_date, end_date = get_dynamic_month_dates(current_year, month)
-    start_date_str = start_date.strftime('%Y-%m-%d')
-    end_date_str = end_date.strftime('%Y-%m-%d')
-    where_clause = f"(Date,gte,{start_date_str})~and(Date,lte,{end_date_str})~and(Evidence Task,notnull)"
+    year_month_pattern = f"{current_year}-{month:02d}-"
+    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Evidence Task,notnull)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
 
@@ -2294,7 +2063,10 @@ async def _call_iot_endpoint(page: str, month: int, request: Request):
         return ""
 
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
-    where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
+    # Use Unique_Key filtering for month-specific records
+    current_year = datetime.now().year
+    year_month_pattern = f"{current_year}-{month:02d}-"
+    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Status,eq,Closed)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
 
@@ -2338,7 +2110,10 @@ async def _call_developer_endpoint(page: str, month: int, request: Request):
         if not kategori_name:
             return ""
 
-        where_clause = f"(Month,eq,{month_name})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
+        # Use Unique_Key filtering for month-specific records
+        current_year = datetime.now().year
+        year_month_pattern = f"{current_year}-{month:02d}-"
+        where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
         response = nocodb.get_records(limit=2000, where=where_clause)
         records = response.get('list', []) if response else []
 
@@ -2369,12 +2144,10 @@ async def _get_evidence_html_section(evidence_type: str, month: int, request: Re
         return {'type': 'evidence', 'title': '3. Evidence Aktivitas', 'content': '<div>Evidence table not configured.</div>'}
 
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
-    # Use date range filtering instead of month name
+    # Use Unique_Key filtering for month-specific records with evidence
     current_year = datetime.now().year
-    start_date, end_date = get_dynamic_month_dates(current_year, month)
-    start_date_str = start_date.strftime('%Y-%m-%d')
-    end_date_str = end_date.strftime('%Y-%m-%d')
-    where_clause = f"(Date,gte,{start_date_str})~and(Date,lte,{end_date_str})~and(Evidence Task,notnull)"
+    year_month_pattern = f"{current_year}-{month:02d}-"
+    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Evidence Task,notnull)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
     
@@ -2858,13 +2631,18 @@ async def export_attendance_celerates_csv(
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
-async def _get_all_evidence_records(evidence_type: str, month: int):
+async def _get_all_evidence_records(evidence_type: str, month_name: str):
     """Get all evidence records for planning purposes"""
-    # Get date range for the month
+    # Convert month name to month number for Unique_Key pattern
+    month_mapping = {
+        'Januari': 1, 'Februari': 2, 'Maret': 3, 'April': 4,
+        'Mei': 5, 'Juni': 6, 'Juli': 7, 'Agustus': 8,
+        'September': 9, 'Oktober': 10, 'November': 11, 'Desember': 12
+    }
+
+    month = month_mapping.get(month_name, 1)
     current_year = datetime.now().year
-    start_date, end_date = get_dynamic_month_dates(current_year, month)
-    start_date_str = start_date.strftime('%Y-%m-%d')
-    end_date_str = end_date.strftime('%Y-%m-%d')
+    year_month_pattern = f"{current_year}-{month:02d}-"
 
     if evidence_type == "iotoperations":
         table_key = "tasklist_iot"
@@ -2878,8 +2656,8 @@ async def _get_all_evidence_records(evidence_type: str, month: int):
         return []
 
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
-    # Use date range filtering instead of month name
-    where_clause = f"(Date,gte,{start_date_str})~and(Date,lte,{end_date_str})~and(Evidence Task,notnull)"
+    # Use Unique_Key filtering for month-specific records with evidence
+    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Evidence Task,notnull)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
 
