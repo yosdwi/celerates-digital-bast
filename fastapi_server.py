@@ -595,7 +595,9 @@ async def generate_timesheet_report(
         
         employee_role = info.get('role')
         work_desc_field = 'Work Description IoT' if employee_role == 'IoT Operations' else 'Work Description'
-        all_work_descs = '; '.join(sorted({str(d).strip() for r in records for d in r.get(work_desc_field, []) if str(d).strip()}))
+        # Get unique work descriptions, limit to 6 tasks max
+        unique_work_descs = sorted({str(d).strip() for r in records for d in r.get(work_desc_field, []) if str(d).strip()})
+        all_work_descs = '; '.join(unique_work_descs[:6])
 
         start_date, end_date = get_dynamic_month_dates(year, month)
         
@@ -2146,7 +2148,9 @@ async def _generate_single_employee_timesheet(name: str, info: dict, month: int,
     records_by_date = {r['Date']: r for r in records if 'Date' in r}
     employee_role = info.get('role')
     work_desc_field = 'Work Description IoT' if employee_role == 'IoT Operations' else 'Work Description'
-    all_work_descs = '; '.join(sorted({str(d).strip() for r in records for d in r.get(work_desc_field, []) if str(d).strip()}))
+    # Get unique work descriptions, limit to 6 tasks max
+    unique_work_descs = sorted({str(d).strip() for r in records for d in r.get(work_desc_field, []) if str(d).strip()})
+    all_work_descs = '; '.join(unique_work_descs[:6])
 
     start_date, end_date = get_dynamic_month_dates(year, month)
 
