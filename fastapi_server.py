@@ -479,8 +479,8 @@ async def _generate_dev_kategori_page(request: Request, page: str, month_name: s
 
     kategori_mapping = {
         "kualitas": "Detail Aktivitas Kualitas Kode",
-        "rilis": "Detail Aktivitas Waktu Rilis",
-        "support": "Detail Aktivitas Dukungan Support"
+        "rilis": "Detail Aktivitas Waktu Rilis Fitur",
+        "support": "Detail Aktivitas Dukungan Support "
     }
 
     kategori_name = kategori_mapping.get(page)
@@ -490,7 +490,7 @@ async def _generate_dev_kategori_page(request: Request, page: str, month_name: s
     # Use Unique_Key filtering for month-specific records
     current_year = datetime.now().year
     year_month_pattern = f"{current_year}-{month:02d}-"
-    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
+    where_clause = f"(Unique Key,like,{year_month_pattern}%)~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
 
@@ -512,8 +512,8 @@ async def _generate_dev_kualitas_data(request: Request, records: list, month_nam
         status = record.get('Status', 'N/A')
         start_date = record.get('Start Date', '')
         end_date = record.get('End Date', '')
-        # pencapaian = record.get('Pencapaian', 0)
-        pencapaian = 100
+        pencapaian = record.get('Pencapaian', 0)
+        # pencapaian = 100
 
         formatted_start = start_date.replace('-', '/') if start_date else 'N/A'
         formatted_end = end_date.replace('-', '/') if end_date else 'N/A'
@@ -529,8 +529,10 @@ async def _generate_dev_kualitas_data(request: Request, records: list, month_nam
             "pencapaian": str(pencapaian)
         })
 
-    total_pencapaian = sum(int(record.get('Pencapaian', 0)) for record in records if record.get('Pencapaian'))
-    avg_pencapaian = total_pencapaian // len(records) if records else 0
+    # Handle None values in pencapaian calculation
+    valid_pencapaian = [record.get('Pencapaian', 0) for record in records if record.get('Pencapaian') is not None]
+    total_pencapaian = sum(int(p) for p in valid_pencapaian if p != 0)
+    avg_pencapaian = total_pencapaian // len(valid_pencapaian) if valid_pencapaian else 0
 
     # Render template as string instead of TemplateResponse for progressive generation
     template = templates.get_template('tasklistdeveloper/detail_aktivitas_kualitas_kode.html')
@@ -568,8 +570,10 @@ async def _generate_dev_rilis_data(request: Request, records: list, month_name: 
             "pencapaian": str(pencapaian)
         })
 
-    total_pencapaian = sum(int(record.get('Pencapaian', 0)) for record in records if record.get('Pencapaian'))
-    avg_pencapaian = total_pencapaian // len(records) if records else 0
+    # Handle None values in pencapaian calculation
+    valid_pencapaian = [record.get('Pencapaian', 0) for record in records if record.get('Pencapaian') is not None]
+    total_pencapaian = sum(int(p) for p in valid_pencapaian if p != 0)
+    avg_pencapaian = total_pencapaian // len(valid_pencapaian) if valid_pencapaian else 0
 
     # Render template as string instead of TemplateResponse for progressive generation
     template = templates.get_template('tasklistdeveloper/detail_aktivitas_waktu_rilis.html')
@@ -593,9 +597,19 @@ async def _generate_dev_support_data(request: Request, records: list, month_name
         end_date = record.get('End Date', '')
         pencapaian = record.get('Pencapaian', 0)
 
-        formatted_start = start_date.replace('-', '/') if start_date else 'N/A'
-        formatted_end = end_date.replace('-', '/') if end_date else 'N/A'
+        # Handle datetime.date objects properly
+        if start_date:
+            formatted_start = str(start_date).replace('-', '/') if isinstance(start_date, str) else start_date.strftime('%Y/%m/%d')
+        else:
+            formatted_start = 'N/A'
 
+        if end_date:
+            formatted_end = str(end_date).replace('-', '/') if isinstance(end_date, str) else end_date.strftime('%Y/%m/%d')
+        else:
+            formatted_end = 'N/A'
+
+        # Handle None pencapaian values
+        pencapaian_str = str(pencapaian) if pencapaian is not None else "0"
         support_data.append({
             "no": i,
             "task_list": task_list,
@@ -604,11 +618,13 @@ async def _generate_dev_support_data(request: Request, records: list, month_name
             "status": status,
             "start_date": formatted_start,
             "end_date": formatted_end,
-            "pencapaian": str(pencapaian)
+            "pencapaian": pencapaian_str
         })
 
-    total_pencapaian = sum(int(record.get('Pencapaian', 0)) for record in records if record.get('Pencapaian'))
-    avg_pencapaian = total_pencapaian // len(records) if records else 0
+    # Handle None values in pencapaian calculation
+    valid_pencapaian = [record.get('Pencapaian', 0) for record in records if record.get('Pencapaian') is not None]
+    total_pencapaian = sum(int(p) for p in valid_pencapaian if p != 0)
+    avg_pencapaian = total_pencapaian // len(valid_pencapaian) if valid_pencapaian else 0
 
     # Render template as string instead of TemplateResponse for progressive generation
     template = templates.get_template('tasklistdeveloper/detail_aktivitas_dukungan_support.html')
@@ -618,53 +634,6 @@ async def _generate_dev_support_data(request: Request, records: list, month_name
         "summary_pencapaian": str(avg_pencapaian),
         "month": month_name
     })
-
-@app.post("/report/tasklistiotoperation")
-async def generate_tasklistiotoperation_report(
-    request: Request,
-    page: str = Form(...),
-    month: int = Form(...)
-):
-    """
-    Generates IoT Operations tasklist report from NocoDB data.
-
-    Args:
-        page: "problem", "aktivitas", or "respon"
-        month: Month number (1-12) from form
-    """
-    if month < 1 or month > 12:
-        raise HTTPException(400, "Invalid month")
-
-    if page not in ["problem", "aktivitas", "respon"]:
-        raise HTTPException(400, "Page must be 'problem', 'aktivitas', or 'respon'")
-
-    indonesian_months = {
-        1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
-        5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
-        9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
-    }
-
-    month_name = indonesian_months[month]
-
-    table_id = config.NOCODB_TABLES.get("tasklist_iot")
-    if not table_id:
-        raise HTTPException(500, "IoT tasklist table not found in config")
-
-    nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
-
-    # Use Unique_Key filtering for month-specific records
-    current_year = datetime.now().year
-    year_month_pattern = f"{current_year}-{month:02d}-"
-    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Status,eq,Closed)"
-    response = nocodb.get_records(limit=2000, where=where_clause)
-    records = response.get('list', []) if response else []
-
-    if page == "problem":
-        return await _generate_iot_problem_page(request, records, month_name)
-    elif page == "aktivitas":
-        return await _generate_iot_aktivitas_page(request, records, month_name)
-    elif page == "respon":
-        return await _generate_iot_respon_page(request, records, month_name)
 
 async def _generate_iot_problem_page(request: Request, records: list, month_name: str):
     """Generate problem formulas page - using the specific formula structure from requirements"""
@@ -907,7 +876,7 @@ async def generate_evidence_report(
     # Use Unique_Key filtering for month-specific records with evidence
     current_year = datetime.now().year
     year_month_pattern = f"{current_year}-{month:02d}-"
-    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Evidence Task,notnull)"
+    where_clause = f"(Unique Key,like,{year_month_pattern}%)~and(Evidence Task,notnull)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
 
@@ -1046,7 +1015,7 @@ async def show_progressive_generator(request: Request):
         "request": request,
         "type": gen_data.get("type", ""),
         "month": gen_data.get("month", 1),
-        "year": gen_data.get("year", 2024),
+        "year": gen_data.get("year", 2026),
         "month_name": gen_data.get("month_name", ""),
         "datetime": datetime
     })
@@ -1262,7 +1231,16 @@ async def generate_plan(
 
         # Pre-fetch evidence records to create a section for each
         evidence_type_param = "iotoperations" if type == "iotoperation" else "developer"
-        evidence_records = await _get_all_evidence_records(evidence_type_param, month)
+
+        # Convert month number to Indonesian month name
+        month_names = {
+            1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+            5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+            9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+        }
+        month_name = month_names.get(int(month), 'Januari')
+
+        evidence_records = await _get_all_evidence_records(evidence_type_param, month_name)
         
         evidence_counter = 1
         for record in evidence_records:
@@ -1350,13 +1328,8 @@ async def generate_plan(
         }
 
 
-@app.post("/api/generate/section")
-async def generate_section(
-    request: Request,
-    section_id: int = Form(...),
-    plan_id: str = Form(...)
-):
-    """Generate a specific section by ID"""
+async def _generate_section_logic(request: Request, section_id: int, plan_id: str):
+    """Logic to generate a specific section by ID"""
     try:
         # Get plan from SQLite database
         plan = get_generation_plan(plan_id)
@@ -1499,6 +1472,15 @@ async def generate_section(
             "error": str(e)
         }
 
+@app.post("/api/generate/section")
+async def generate_section(
+    request: Request,
+    section_id: int = Form(...),
+    plan_id: str = Form(...)
+):
+    """Generate a specific section by ID"""
+    return await _generate_section_logic(request, section_id, plan_id)
+
 
 @app.post("/api/generate/retry")
 async def retry_section(
@@ -1527,7 +1509,7 @@ async def retry_section(
         update_generation_plan(plan_id, plan)
 
         # Re-attempt generation
-        return await generate_section(request, section_id)
+        return await _generate_section_logic(request, section_id, plan_id)
 
     except Exception as e:
         return {
@@ -1742,16 +1724,18 @@ async def _get_iot_tasklist_html_content(month: int, section_type: str, request:
             return ""
 
         nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
-        # Use date range filtering with Start_Date and End_Date validation
-        where_clause = f"(Date,gte,{start_date_str})~and(Date,lte,{end_date_str})~and(Status,eq,Closed)"
+        # Use Unique_Key filtering for month-specific records (consistent with other functions)
+        current_year = datetime.now().year
+        year_month_pattern = f"{current_year}-{month:02d}-"
+        where_clause = f"(Unique Key,like,{year_month_pattern}%)~and(Status,eq,Closed)"
         response = nocodb.get_records(limit=2000, where=where_clause)
         raw_records = response.get('list', []) if response else []
 
         # Additional validation to filter out N/A, empty, or null dates
         records = []
         for record in raw_records:
-            start_date_val = record.get('Start_Date', '')
-            end_date_val = record.get('End_Date', '')
+            start_date_val = record.get('Start Date', '')
+            end_date_val = record.get('End Date', '')
 
             # Skip if dates are empty, N/A, null, or contain invalid values
             if (start_date_val and end_date_val and
@@ -1785,7 +1769,8 @@ async def _get_developer_tasklist_html_content(month: int, section_type: str, re
         }
         month_name = indonesian_months[month]
 
-        table_id = config.NOCODB_TABLES.get("tasklist")  # Use "tasklist" instead of "tasklist_developer"
+        # Use NocoDB API
+        table_id = config.NOCODB_TABLES.get("tasklist")
         if not table_id:
             print(f"❌ No table ID found for tasklist in config: {config.NOCODB_TABLES}")
             return ""
@@ -1794,37 +1779,24 @@ async def _get_developer_tasklist_html_content(month: int, section_type: str, re
 
         kategori_mapping = {
             "kualitas": "Detail Aktivitas Kualitas Kode",
-            "waktu": "Detail Aktivitas Waktu Rilis",
-            "dukungan": "Detail Aktivitas Dukungan Support"
+            "waktu": "Detail Aktivitas Waktu Rilis Fitur",
+            "dukungan": "Detail Aktivitas Dukungan Support "
         }
 
         kategori_name = kategori_mapping.get(section_type)
         if not kategori_name:
             return ""
 
-        # First, let's check with basic filtering to see field structure
-        where_clause_basic = f"(Date,gte,{start_date_str})~and(Date,lte,{end_date_str})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
-        response = nocodb.get_records(limit=5, where=where_clause_basic)
-        debug_records = response.get('list', []) if response else []
-
-        # Debug: print available fields
-        if debug_records:
-            print(f"🔍 Available fields in tasklist record: {list(debug_records[0].keys())}")
-            first_record = debug_records[0]
-            for key in first_record.keys():
-                if 'date' in key.lower() or 'start' in key.lower() or 'end' in key.lower():
-                    print(f"🔍 Date-related field '{key}': {first_record.get(key)}")
-
-        # Use the full filtering with proper field names
-        where_clause = f"(Date,gte,{start_date_str})~and(Date,lte,{end_date_str})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
+        # Use Month filtering for month-specific records with NocoDB syntax
+        where_clause = f"(Month,eq,{month_name})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)~and(Start Date,notnull)~and(End Date,notnull)"
         response = nocodb.get_records(limit=2000, where=where_clause)
         raw_records = response.get('list', []) if response else []
 
         # Additional validation to filter out N/A, empty, or null dates
         records = []
         for record in raw_records:
-            start_date_val = record.get('Start_Date', '')
-            end_date_val = record.get('End_Date', '')
+            start_date_val = record.get('Start Date', '')
+            end_date_val = record.get('End Date', '')
 
             # Skip if dates are empty, N/A, null, or contain invalid values
             if (start_date_val and end_date_val and
@@ -1835,14 +1807,16 @@ async def _get_developer_tasklist_html_content(month: int, section_type: str, re
         if section_type == "kualitas":
             return await _generate_dev_kualitas_data(request, records, month_name)
         elif section_type == "waktu":
-            return await _generate_dev_waktu_data(request, records, month_name)
+            return await _generate_dev_rilis_data(request, records, month_name)
         elif section_type == "dukungan":
-            return await _generate_dev_dukungan_data(request, records, month_name)
+            return await _generate_dev_support_data(request, records, month_name)
 
         return ""
 
     except Exception as e:
         print(f"Error generating Developer tasklist section {section_type}: {e}")
+        import traceback
+        traceback.print_exc()
         return ""
 
 
@@ -2066,7 +2040,7 @@ async def _call_iot_endpoint(page: str, month: int, request: Request):
     # Use Unique_Key filtering for month-specific records
     current_year = datetime.now().year
     year_month_pattern = f"{current_year}-{month:02d}-"
-    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Status,eq,Closed)"
+    where_clause = f"(Unique Key,like,{year_month_pattern}%)~and(Status,eq,Closed)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
 
@@ -2103,8 +2077,8 @@ async def _call_developer_endpoint(page: str, month: int, request: Request):
         nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
         kategori_mapping = {
             "kualitas": "Detail Aktivitas Kualitas Kode",
-            "rilis": "Detail Aktivitas Waktu Rilis",
-            "support": "Detail Aktivitas Dukungan Support"
+            "rilis": "Detail Aktivitas Waktu Rilis Fitur",
+            "support": "Detail Aktivitas Dukungan Support "
         }
         kategori_name = kategori_mapping.get(page)
         if not kategori_name:
@@ -2113,7 +2087,7 @@ async def _call_developer_endpoint(page: str, month: int, request: Request):
         # Use Unique_Key filtering for month-specific records
         current_year = datetime.now().year
         year_month_pattern = f"{current_year}-{month:02d}-"
-        where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
+        where_clause = f"(Unique Key,like,{year_month_pattern}%)~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
         response = nocodb.get_records(limit=2000, where=where_clause)
         records = response.get('list', []) if response else []
 
@@ -2147,7 +2121,7 @@ async def _get_evidence_html_section(evidence_type: str, month: int, request: Re
     # Use Unique_Key filtering for month-specific records with evidence
     current_year = datetime.now().year
     year_month_pattern = f"{current_year}-{month:02d}-"
-    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Evidence Task,notnull)"
+    where_clause = f"(Unique Key,like,{year_month_pattern}%)~and(Evidence Task,notnull)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
     
@@ -2657,7 +2631,7 @@ async def _get_all_evidence_records(evidence_type: str, month_name: str):
 
     nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
     # Use Unique_Key filtering for month-specific records with evidence
-    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Evidence Task,notnull)"
+    where_clause = f"(Unique Key,like,{year_month_pattern}%)~and(Evidence Task,notnull)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
 

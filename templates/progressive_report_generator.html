@@ -402,6 +402,39 @@
             margin-top: 5px;
             font-style: italic;
         }
+
+        /* Responsive image handling to prevent overflow - IMPORTANT! */
+        .page img,
+        .content-area img,
+        .report-content img,
+        .evidence-image,
+        img {
+            max-width: calc(100% - 40px) !important;
+            max-height: 400px !important;
+            height: auto !important;
+            width: auto !important;
+            object-fit: contain !important;
+            display: block !important;
+            margin: 10px auto !important;
+            border: 1px solid #ddd !important;
+            border-radius: 4px !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+            box-sizing: border-box !important;
+        }
+
+        /* Force all images in page container to be responsive */
+        .page-container img,
+        .page-container .evidence-image,
+        .page-container [src*=".jpg"],
+        .page-container [src*=".jpeg"],
+        .page-container [src*=".png"],
+        .page-container [src*=".gif"] {
+            max-width: calc(100% - 40px) !important;
+            max-height: 400px !important;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain !important;
+        }
     </style>
 </head>
 <body>

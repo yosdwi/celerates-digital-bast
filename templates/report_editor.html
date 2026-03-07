@@ -518,6 +518,40 @@
             border-radius: 8px;
             text-align: center;
         }
+
+        /* Responsive image handling to prevent overflow */
+        .page img,
+        .content-area img,
+        .report-content img,
+        .evidence-image,
+        .editor-content img {
+            max-width: min(700px, calc(100% - 80px));
+            max-height: min(500px, calc(100vh - 200px));
+            height: auto;
+            object-fit: contain;
+            display: block;
+            margin: 10px auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-sizing: border-box;
+        }
+
+        /* General image constraint for all images */
+        img {
+            max-width: 100%;
+            height: auto;
+            box-sizing: border-box;
+        }
+
+        /* Prevent images from breaking page layout in print/PDF */
+        @media print {
+            img {
+                max-width: 100% !important;
+                max-height: 90vh !important;
+                page-break-inside: avoid;
+            }
+        }
     </style>
 </head>
 <body>
@@ -729,8 +763,10 @@
     <div class="preview-area">
         <div class="page-container">
 
+            {% set counters = {'major': 0, 'minor': 1} %}
             {% for section in html_sections %}
                 {% if section.type == 'timesheet_header' or section.type == 'tasklist_header' or section.type == 'attendance_header' or section.type == 'evidence_header' %}
+                    {% set _ = counters.update({'major': counters.major + 1, 'minor': 1}) %}
                     <!-- Header Section - Professional Document Style -->
                     <div class="page portrait" data-section-index="{{ loop.index }}">
                         <div style="display: flex; align-items: center; justify-content: center; height: 100%; text-align: center;">
@@ -755,7 +791,7 @@
                                 <img src="{{ logo_pama_url }}" alt="PAMA Logo">
                             </div>
                             <div class="section-title">
-                                {{ loop.index }}. Timesheet {{ section.employee_name }}
+                                {{ counters.major }}.{{ counters.minor }} Timesheet {{ section.employee_name }}
                             </div>
                             <div class="logo-right">
                                 <img src="{{ logo_celerates_url }}" alt="Celerates Logo">
@@ -769,6 +805,7 @@
                             </div>
                         </div>
                     </div>
+                    {% set _ = counters.update({'minor': counters.minor + 1}) %}
 
                 {% elif section.type == 'tasklist' or section.type == 'tasklist_header' or 'tasklist' in (section.title | lower) or 'sla' in (section.title | lower) or 'task list' in (section.title | lower) %}
                     <!-- Tasklist pages - Portrait -->

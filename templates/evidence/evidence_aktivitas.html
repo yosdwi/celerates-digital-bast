@@ -25,7 +25,7 @@
             border-radius: 8px;
             background: #fafafa;
         }
-        .evidence-title {
+        /* .evidence-title {
             font-size: 18px;
             font-weight: 900;
             margin-bottom: 25px;
@@ -36,18 +36,19 @@
             border-bottom: 3px solid #000;
             padding-bottom: 12px;
             font-family: 'Arial Black', Arial, sans-serif;
-        }
+        } */
         .evidence-image {
-            width: 100%;
-            max-width: 700px;
-            max-height: 500px;
-            height: auto;
+            max-width: calc(100% - 40px) !important;
+            max-height: 400px !important;
+            width: auto !important;
+            height: auto !important;
             border: 2px solid #ddd;
             border-radius: 8px;
             box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-            object-fit: contain;
-            display: block;
-            margin: 20px auto;
+            object-fit: contain !important;
+            display: block !important;
+            margin: 20px auto !important;
+            box-sizing: border-box !important;
             background: white;
         }
         .image-container {
@@ -58,7 +59,7 @@
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-        .evidence-description {
+        /* .evidence-description {
             font-size: 14px;
             color: #555;
             margin-top: 25px;
@@ -68,13 +69,25 @@
             border-left: 4px solid #007bff;
             border-radius: 4px;
             line-height: 1.6;
+        } */
+
+        /* Force all images to be responsive */
+        img {
+            max-width: calc(100% - 40px) !important;
+            max-height: 400px !important;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain !important;
+            display: block !important;
+            margin: 10px auto !important;
+            box-sizing: border-box !important;
         }
     </style>
 </head>
 <body>
     {% for item in evidence_data %}
     <div class="evidence-item">
-        <div class="evidence-title">3.{{ item.number }}. {{ item.title }}</div>
+        <!-- <div class="evidence-title">3.{{ item.number }}. {{ item.title }}</div> -->
 
         {% if item.image_path %}
         <div class="image-container">
@@ -82,11 +95,11 @@
         </div>
         {% endif %}
 
-        {% if item.description %}
-        <div class="evidence-description">
+        <!-- {% if item.description %} -->
+        <!-- <div class="evidence-description">
             <strong>Deskripsi:</strong> {{ item.description }}
-        </div>
-        {% endif %}
+        </div> -->
+        <!-- {% endif %} -->
     </div>
     {% endfor %}
 </body>
