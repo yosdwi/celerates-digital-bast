@@ -716,10 +716,10 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     cursor.execute('''
     SELECT "Task_List", "Start_Date", "End_Date", "Requestor"
     FROM "pc38r6u1npuq0ul"."Tasklist Developer"
-    WHERE "Id_Key" LIKE %s
+    WHERE "Unique_Key" LIKE %s
     AND "Status" = 'Closed'
     ORDER BY "Start_Date"
-    ''', (f'{year_month_pattern}%100',))
+    ''', (f'{year_month_pattern}%_100',))
 
     task_rows = cursor.fetchall()
     cursor.close()
@@ -819,11 +819,7 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
         month_num = month_mapping.get(month_name, 1)
         current_year = datetime.now().year
 
-        # Calculate pagination offset
-        items_per_page = 10
-        offset = (page_number - 1) * items_per_page
-
-        # Filter by tanggal_problem for the specific month with pagination
+        # First, get total count and all records for overall statistics
         cursor.execute("""
         SELECT
             problem,
@@ -844,16 +840,25 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
         FROM public.vw_sla_iot_operations
         WHERE tanggal_problem LIKE %s
         ORDER BY id
-        LIMIT %s OFFSET %s
-        """, (f"{current_year}/{month_num:02d}/%", items_per_page, offset))
+        """, (f"{current_year}/{month_num:02d}/%",))
 
-        rows = cursor.fetchall()
+        all_rows = cursor.fetchall()
 
-        # Process data and map to template format
-        total_respon_achievement = 0
-        total_penyelesaian_achievement = 0
+        # Calculate pagination
+        items_per_page = 10
+        start_idx = (page_number - 1) * items_per_page
+        end_idx = start_idx + items_per_page
+        rows = all_rows[start_idx:end_idx]
 
-        for i, row in enumerate(rows, 1):
+        # Calculate overall statistics from ALL records
+        total_respon_achievement_all = 0
+        total_penyelesaian_achievement_all = 0
+        for row in all_rows:
+            total_respon_achievement_all += (row[13] or 0)  # respon_achievement
+            total_penyelesaian_achievement_all += (row[14] or 0)  # penyelesaian_achievement
+
+        # Process paginated data and map to template format
+        for i, row in enumerate(rows):
             (problem, tanggal_problem, waktu_problem, tanggal_respon, waktu_respon,
              tanggal_penyelesaian, waktu_penyelesaian, pic_pama, engineer_managed_service,
              sla_waktu_respon, aktual_waktu_respon, sla_waktu_penyelesaian,
@@ -865,7 +870,7 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
 
             # Map all fields directly from PostgreSQL view
             respon_data.append({
-                "no": i,
+                "no": start_idx + i + 1,  # Global numbering
                 "problem": problem or 'No Description',
                 "tanggal_problem": tanggal_problem or '',
                 "waktu_problem": str(waktu_problem or '').split('.')[0],  # Remove microseconds
@@ -885,18 +890,14 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
                 "performance_penyelesaian_2": 100 if (aktual_waktu_penyelesaian or 0) <= (sla_waktu_penyelesaian or 0) else 0
             })
 
-            # Accumulate for summary
-            total_respon_achievement += (respon_achievement or 0)
-            total_penyelesaian_achievement += (penyelesaian_achievement or 0)
-
         cursor.close()
         conn.close()
 
-        # Calculate average achievement percentage
-        total_records = len(rows)
-        if total_records > 0:
-            avg_respon_achievement = (total_respon_achievement / total_records) * 100
-            avg_penyelesaian_achievement = (total_penyelesaian_achievement / total_records) * 100
+        # Calculate overall average achievement percentage from ALL records
+        total_all_records = len(all_rows)
+        if total_all_records > 0:
+            avg_respon_achievement = (total_respon_achievement_all / total_all_records) * 100
+            avg_penyelesaian_achievement = (total_penyelesaian_achievement_all / total_all_records) * 100
             summary_percentage = round((avg_respon_achievement + avg_penyelesaian_achievement) / 2, 1)
         else:
             summary_percentage = 0.0

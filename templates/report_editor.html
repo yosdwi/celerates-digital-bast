@@ -553,6 +553,15 @@
             <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
             <h5>Processing...</h5>
             <p class="text-muted">Please wait</p>
+
+            <!-- Progress Bar -->
+            <div class="progress mt-3 mb-2" style="height: 8px;">
+                <div class="progress-bar bg-primary" id="progressBar" role="progressbar" style="width: 0%"></div>
+            </div>
+            <div class="d-flex justify-content-between">
+                <small class="text-muted" id="progressPercent">0%</small>
+                <small class="text-muted" id="estimatedTime">Calculating...</small>
+            </div>
         </div>
     </div>
 
@@ -1063,6 +1072,13 @@
         function printReport() {
             // SCREENSHOT APPROACH - Capture actual visual content
 
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const loadingText = loadingOverlay.querySelector('h5');
+            const loadingSubtext = loadingOverlay.querySelector('p');
+            const progressBar = document.getElementById('progressBar');
+            const progressPercent = document.getElementById('progressPercent');
+            const estimatedTime = document.getElementById('estimatedTime');
+
             showLoading();
 
             // Hide editor controls
@@ -1081,20 +1097,69 @@
 
             let pageIndex = 0;
             let hasAddedPage = false;
+            const totalPages = pages.length;
+            const startTime = Date.now();
+            let pageProcessingTimes = [];
+
+            // Function to update progress
+            function updateProgress() {
+                const progress = (pageIndex / totalPages) * 100;
+                const progressPercentValue = Math.round(progress);
+
+                // Update progress bar
+                progressBar.style.width = `${progress}%`;
+                progressPercent.textContent = `${progressPercentValue}%`;
+
+                // Calculate estimated time based on completed pages
+                if (pageProcessingTimes.length > 0) {
+                    const avgTimePerPage = pageProcessingTimes.reduce((a, b) => a + b, 0) / pageProcessingTimes.length;
+                    const remainingPages = totalPages - pageIndex;
+                    const estimatedRemainingTime = (avgTimePerPage * remainingPages) / 1000; // Convert to seconds
+
+                    if (remainingPages > 0) {
+                        if (estimatedRemainingTime < 60) {
+                            estimatedTime.textContent = `~${Math.ceil(estimatedRemainingTime)}s remaining`;
+                        } else {
+                            const minutes = Math.floor(estimatedRemainingTime / 60);
+                            const seconds = Math.ceil(estimatedRemainingTime % 60);
+                            estimatedTime.textContent = `~${minutes}m ${seconds}s remaining`;
+                        }
+                    } else {
+                        estimatedTime.textContent = 'Almost done!';
+                    }
+                } else {
+                    estimatedTime.textContent = 'Calculating...';
+                }
+            }
 
             // Function to process each page
             function processNextPage() {
-                if (pageIndex >= pages.length) {
+                if (pageIndex >= totalPages) {
                     // All pages processed - save PDF
-                    doc.save('Digital_BAST_Report.pdf');
-                    editorControls.style.display = 'block';
-                    hideLoading();
-                    alert('PDF dengan content asli berhasil diunduh!');
+                    progressBar.style.width = '100%';
+                    progressPercent.textContent = '100%';
+                    estimatedTime.textContent = 'Saving...';
+                    loadingText.textContent = 'Saving PDF...';
+                    loadingSubtext.textContent = 'Almost there!';
+
+                    setTimeout(() => {
+                        doc.save('Digital_BAST_Report.pdf');
+                        editorControls.style.display = 'block';
+                        hideLoading();
+                        alert('PDF dengan content asli berhasil diunduh!');
+                    }, 500);
                     return;
                 }
 
                 const page = pages[pageIndex];
-                console.log(`Processing page ${pageIndex + 1}/${pages.length}`);
+                const pageStartTime = Date.now();
+
+                // Update UI
+                loadingText.textContent = `Capturing page ${pageIndex + 1} of ${totalPages}...`;
+                loadingSubtext.textContent = 'Please wait, this may take a moment.';
+                updateProgress();
+
+                console.log(`Processing page ${pageIndex + 1}/${totalPages}`);
 
                 // Use html2canvas to capture the page as image
                 html2canvas(page, {
@@ -1105,6 +1170,10 @@
                     width: 794,
                     height: 1123
                 }).then(canvas => {
+                    const pageEndTime = Date.now();
+                    const pageProcessingTime = pageEndTime - pageStartTime;
+                    pageProcessingTimes.push(pageProcessingTime);
+
                     const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
                     // Add new page if not first page
@@ -1126,6 +1195,10 @@
 
                 }).catch(error => {
                     console.error('Error capturing page:', error);
+                    const pageEndTime = Date.now();
+                    const pageProcessingTime = pageEndTime - pageStartTime;
+                    pageProcessingTimes.push(pageProcessingTime); // Still track time even on error
+
                     // Skip this page and continue
                     pageIndex++;
                     setTimeout(() => processNextPage(), 100);
