@@ -102,10 +102,12 @@
                     <td class="pencapaian-col center">{{ item.pencapaian }}%</td>
                 </tr>
                 {% endfor %}
+                {% if summary_pencapaian %}
                 <tr class="summary-row">
                     <td colspan="7" class="center">Pencapaian Aktivitas Kualitas Kode (%)</td>
                     <td class="center">{{ summary_pencapaian }}%</td>
                 </tr>
+                {% endif %}
             </tbody>
         </table>
         </div>

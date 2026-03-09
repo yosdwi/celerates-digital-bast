@@ -519,12 +519,10 @@
             text-align: center;
         }
 
-        /* Responsive image handling to prevent overflow */
-        .page img,
-        .content-area img,
-        .report-content img,
-        .evidence-image,
-        .editor-content img {
+        /* Responsive image handling specifically for evidence images only */
+        .evidence-container img,
+        .evidence-section img,
+        .evidence-image {
             max-width: min(700px, calc(100% - 80px));
             max-height: min(500px, calc(100vh - 200px));
             height: auto;
@@ -534,13 +532,6 @@
             border: 1px solid #ddd;
             border-radius: 4px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            box-sizing: border-box;
-        }
-
-        /* General image constraint for all images */
-        img {
-            max-width: 100%;
-            height: auto;
             box-sizing: border-box;
         }
 

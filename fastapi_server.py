@@ -501,7 +501,7 @@ async def _generate_dev_kategori_page(request: Request, page: str, month_name: s
     elif page == "support":
         return await _generate_dev_support_data(request, records, month_name)
 
-async def _generate_dev_kualitas_data(request: Request, records: list, month_name: str):
+async def _generate_dev_kualitas_data(request: Request, records: list, month_name: str, page_number: int = 1, total_pages: int = 1):
     """Generate kualitas kode data"""
     kualitas_data = []
     for i, record in enumerate(records, 1):
@@ -518,8 +518,11 @@ async def _generate_dev_kualitas_data(request: Request, records: list, month_nam
         formatted_start = start_date.replace('-', '/') if start_date else 'N/A'
         formatted_end = end_date.replace('-', '/') if end_date else 'N/A'
 
+        # Use global numbering if available, otherwise page-local numbering
+        item_number = record.get('_page_number', i)
+
         kualitas_data.append({
-            "no": i,
+            "no": item_number,
             "task_list": task_list,
             "requestor": requestor,
             "pic": pic,
@@ -529,21 +532,26 @@ async def _generate_dev_kualitas_data(request: Request, records: list, month_nam
             "pencapaian": str(pencapaian)
         })
 
-    # Handle None values in pencapaian calculation
-    valid_pencapaian = [record.get('Pencapaian', 0) for record in records if record.get('Pencapaian') is not None]
-    total_pencapaian = sum(int(p) for p in valid_pencapaian if p != 0)
-    avg_pencapaian = total_pencapaian // len(valid_pencapaian) if valid_pencapaian else 0
+    # Handle None values in pencapaian calculation - show summary only on last page
+    show_summary = (page_number == total_pages)
+    summary_pencapaian = ""
+
+    if show_summary:
+        valid_pencapaian = [record.get('Pencapaian', 0) for record in records if record.get('Pencapaian') is not None]
+        total_pencapaian = sum(int(p) for p in valid_pencapaian if p != 0)
+        avg_pencapaian = total_pencapaian // len(valid_pencapaian) if valid_pencapaian else 0
+        summary_pencapaian = str(avg_pencapaian)
 
     # Render template as string instead of TemplateResponse for progressive generation
     template = templates.get_template('tasklistdeveloper/detail_aktivitas_kualitas_kode.html')
     return template.render({
         "request": request,
         "kualitas_kode_data": kualitas_data,
-        "summary_pencapaian": str(avg_pencapaian),
+        "summary_pencapaian": summary_pencapaian,
         "month": month_name
     })
 
-async def _generate_dev_rilis_data(request: Request, records: list, month_name: str):
+async def _generate_dev_rilis_data(request: Request, records: list, month_name: str, page_number: int = 1, total_pages: int = 1):
     """Generate waktu rilis data"""
     rilis_data = []
     for i, record in enumerate(records, 1):
@@ -584,7 +592,7 @@ async def _generate_dev_rilis_data(request: Request, records: list, month_name: 
         "month": month_name
     })
 
-async def _generate_dev_support_data(request: Request, records: list, month_name: str):
+async def _generate_dev_support_data(request: Request, records: list, month_name: str, page_number: int = 1, total_pages: int = 1):
     """Generate dukungan support data"""
     support_data = []
     for i, record in enumerate(records, 1):
@@ -699,7 +707,7 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     # Get tasklist developer data for Fauzan
     tasklist_table = config.NOCODB_TABLES.get("tasklist")
 
-    # Get Fauzan's tasks directly from database using Unique_Key pattern
+    # Get Fauzan's tasks using Month filter
     import psycopg2
 
     conn = psycopg2.connect(config.DB_URL)
@@ -708,10 +716,10 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     cursor.execute('''
     SELECT "Task_List", "Start_Date", "End_Date", "Requestor"
     FROM "pc38r6u1npuq0ul"."Tasklist Developer"
-    WHERE "Unique_Key" LIKE %s
+    WHERE "Id_Key" LIKE %s
     AND "Status" = 'Closed'
     ORDER BY "Start_Date"
-    ''', (f'{year_month_pattern}%_100',))
+    ''', (f'{year_month_pattern}%100',))
 
     task_rows = cursor.fetchall()
     cursor.close()
@@ -790,49 +798,116 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
 
 
 async def _generate_iot_respon_page(request: Request, records: list, month_name: str):
-    """Generate response time page from NocoDB records"""
+    """Generate response time page from PostgreSQL vw_sla_iot_operations view"""
+    import psycopg2
+    from datetime import datetime
+
     respon_data = []
-    for i, record in enumerate(records, 1):
-        task_list = record.get('Task List', 'No Task Description')
-        start_date = record.get('Start Date', '')
-        end_date = record.get('End Date', '')
-        requestor = record.get('Requestor', 'N/A')
 
-        pic_list = record.get('PIC', [])
-        engineer = ', '.join(pic_list) if isinstance(pic_list, list) else str(pic_list or 'N/A')
+    try:
+        # Connect to PostgreSQL and query vw_sla_iot_operations
+        conn = psycopg2.connect(config.DB_URL)
+        cursor = conn.cursor()
 
-        start_time = "08:00"
-        end_time = "17:00"
+        # Convert month_name to year-month pattern for filtering
+        month_mapping = {
+            'Januari': 1, 'Februari': 2, 'Maret': 3, 'April': 4,
+            'Mei': 5, 'Juni': 6, 'Juli': 7, 'Agustus': 8,
+            'September': 9, 'Oktober': 10, 'November': 11, 'Desember': 12
+        }
 
-        response_minutes = "30"
+        month_num = month_mapping.get(month_name, 1)
+        current_year = datetime.now().year
 
-        respon_data.append({
-            "no": i,
-            "problem": task_list,
-            "tanggal_problem": start_date,
-            "waktu_problem": start_time,
-            "tanggal_respon": start_date,
-            "tanggal_penyelesaian": end_date,
-            "waktu_penyelesaian": end_time,
-            "pic_pama": requestor,
-            "engineer": engineer,
-            "waktu_respon_menit": response_minutes,
-            "aktual_waktu_1": response_minutes,
-            "aktual_waktu_2": "180",
-            "aktual_waktu_3": "60",
-            "aktual_waktu_4": "240",
-            "performance_respon_1": "95",
-            "performance_respon_2": "98",
-            "performance_penyelesaian_1": "97",
-            "performance_penyelesaian_2": "99"
-        })
+        # Filter by tanggal_problem for the specific month
+        cursor.execute("""
+        SELECT
+            problem,
+            tanggal_problem,
+            waktu_problem,
+            tanggal_respon,
+            waktu_respon,
+            tanggal_penyelesaian,
+            waktu_penyelesaian,
+            pic_pama,
+            engineer_managed_service,
+            sla_waktu_respon,
+            aktual_waktu_respon,
+            sla_waktu_penyelesaian,
+            aktual_waktu_penyelesaian,
+            respon_achievement,
+            penyelesaian_achievement
+        FROM public.vw_sla_iot_operations
+        WHERE tanggal_problem LIKE %s
+        ORDER BY id
+        """, (f"{current_year}/{month_num:02d}/%",))
+
+        rows = cursor.fetchall()
+
+        # Process data and map to template format
+        total_respon_achievement = 0
+        total_penyelesaian_achievement = 0
+
+        for i, row in enumerate(rows, 1):
+            (problem, tanggal_problem, waktu_problem, tanggal_respon, waktu_respon,
+             tanggal_penyelesaian, waktu_penyelesaian, pic_pama, engineer_managed_service,
+             sla_waktu_respon, aktual_waktu_respon, sla_waktu_penyelesaian,
+             aktual_waktu_penyelesaian, respon_achievement, penyelesaian_achievement) = row
+
+            # Convert times to integers/strings as needed
+            waktu_respon_menit = int(round(float(aktual_waktu_respon or 0)))
+            waktu_penyelesaian_menit = int(round(float(aktual_waktu_penyelesaian or 0)))
+
+            # Map all fields directly from PostgreSQL view
+            respon_data.append({
+                "no": i,
+                "problem": problem or 'No Description',
+                "tanggal_problem": tanggal_problem or '',
+                "waktu_problem": str(waktu_problem or '').split('.')[0],  # Remove microseconds
+                "tanggal_respon": tanggal_respon or '',
+                "tanggal_penyelesaian": tanggal_penyelesaian or '',
+                "waktu_penyelesaian": str(waktu_penyelesaian or '').split('.')[0],  # Remove microseconds
+                "pic_pama": pic_pama or 'N/A',
+                "engineer": engineer_managed_service or 'N/A',
+                "waktu_respon_menit": waktu_respon_menit,
+                "aktual_waktu_1": waktu_respon_menit,  # Same as waktu_respon_menit
+                "aktual_waktu_2": waktu_penyelesaian_menit,
+                "aktual_waktu_3": sla_waktu_respon or 0,  # SLA target for response
+                "aktual_waktu_4": sla_waktu_penyelesaian or 0,  # SLA target for resolution
+                "performance_respon_1": (respon_achievement or 0) * 100,
+                "performance_respon_2": 100 if (aktual_waktu_respon or 0) <= (sla_waktu_respon or 0) else 0,
+                "performance_penyelesaian_1": (penyelesaian_achievement or 0) * 100,
+                "performance_penyelesaian_2": 100 if (aktual_waktu_penyelesaian or 0) <= (sla_waktu_penyelesaian or 0) else 0
+            })
+
+            # Accumulate for summary
+            total_respon_achievement += (respon_achievement or 0)
+            total_penyelesaian_achievement += (penyelesaian_achievement or 0)
+
+        cursor.close()
+        conn.close()
+
+        # Calculate average achievement percentage
+        total_records = len(rows)
+        if total_records > 0:
+            avg_respon_achievement = (total_respon_achievement / total_records) * 100
+            avg_penyelesaian_achievement = (total_penyelesaian_achievement / total_records) * 100
+            summary_percentage = round((avg_respon_achievement + avg_penyelesaian_achievement) / 2, 1)
+        else:
+            summary_percentage = 0.0
+
+    except Exception as e:
+        print(f"Error querying PostgreSQL vw_sla_iot_operations: {e}")
+        # Fallback to empty data
+        respon_data = []
+        summary_percentage = 0.0
 
     # Render template as string instead of TemplateResponse for progressive generation
     template = templates.get_template('tasklistiotoperation/detail_respon_resolution_time.html')
     return template.render({
         "request": request,
         "respon_data": respon_data,
-        "summary_percentage": "97.5",
+        "summary_percentage": str(summary_percentage),
         "month": month_name
     })
 
@@ -1197,28 +1272,83 @@ async def generate_plan(
         })
         section_id += 1
 
-        # Tasklist sections
+        # Tasklist sections with pagination
         if type == "iotoperation":
-            tasklist_sections = [
-                {"title": "2.1. IoT Operations - Problem Report", "section_type": "problem"},
-                {"title": "2.2. IoT Operations - Aktivitas Report", "section_type": "aktivitas"}
-            ]
-        else:
-            tasklist_sections = [
-                {"title": "2.1. Developer - Kualitas Kode", "section_type": "kualitas"},
-                {"title": "2.2. Developer - Waktu Rilis", "section_type": "waktu"},
-                {"title": "2.3. Developer - Dukungan Support", "section_type": "dukungan"}
+            # Apply pagination to IoT tasklist too
+            iot_tasklists = [
+                {"base_title": "IoT Operations - Problem Report", "section_type": "problem", "base_num": "2.1"},
+                {"base_title": "IoT Operations - Aktivitas Report", "section_type": "aktivitas", "base_num": "2.2"},
+                {"base_title": "IoT Operations - Respon Resolution Time", "section_type": "respon", "base_num": "2.3"}
             ]
 
-        for tasklist in tasklist_sections:
-            sections_plan.append({
-                "id": section_id,
-                "type": "tasklist",
-                "title": tasklist["title"],
-                "section_type": tasklist["section_type"],
-                "status": "pending"
-            })
-            section_id += 1
+            for tasklist in iot_tasklists:
+                # Calculate pages for IoT tasklist (use same logic as developer)
+                page_count = await _calculate_iot_tasklist_pages(tasklist["section_type"], month)
+
+                if page_count == 0:
+                    # No data, create single empty section
+                    sections_plan.append({
+                        "id": section_id,
+                        "type": "tasklist",
+                        "title": f"{tasklist['base_num']} {tasklist['base_title']}",
+                        "section_type": tasklist["section_type"],
+                        "status": "pending"
+                    })
+                    section_id += 1
+                else:
+                    # Create multiple sections for pagination
+                    for page_num in range(1, page_count + 1):
+                        page_suffix = f" (Halaman {page_num})" if page_count > 1 else ""
+                        title = f"{tasklist['base_num']}.{page_num} {tasklist['base_title']}{page_suffix}"
+
+                        sections_plan.append({
+                            "id": section_id,
+                            "type": "tasklist",
+                            "title": title,
+                            "section_type": tasklist["section_type"],
+                            "page_number": page_num,
+                            "total_pages": page_count,
+                            "status": "pending"
+                        })
+                        section_id += 1
+        else:
+            # For developer, calculate pagination for each task list
+            developer_tasklists = [
+                {"base_title": "Detail Aktivitas Kualitas Kode", "section_type": "kualitas", "base_num": "2.1"},
+                {"base_title": "Detail Aktivitas Waktu Rilis", "section_type": "waktu", "base_num": "2.2"},
+                {"base_title": "Detail Aktivitas Dukungan Support", "section_type": "dukungan", "base_num": "2.3"}
+            ]
+
+            for tasklist in developer_tasklists:
+                # Calculate how many pages needed for this task list
+                page_count = await _calculate_tasklist_pages(tasklist["section_type"], month)
+
+                if page_count == 0:
+                    # No data, create single empty section
+                    sections_plan.append({
+                        "id": section_id,
+                        "type": "tasklist",
+                        "title": f"{tasklist['base_num']} {tasklist['base_title']}",
+                        "section_type": tasklist["section_type"],
+                        "status": "pending"
+                    })
+                    section_id += 1
+                else:
+                    # Create multiple sections for pagination
+                    for page_num in range(1, page_count + 1):
+                        page_suffix = f" (Halaman {page_num})" if page_count > 1 else ""
+                        title = f"{tasklist['base_num']}.{page_num} {tasklist['base_title']}{page_suffix}"
+
+                        sections_plan.append({
+                            "id": section_id,
+                            "type": "tasklist",
+                            "title": title,
+                            "section_type": tasklist["section_type"],
+                            "page_number": page_num,
+                            "total_pages": page_count,
+                            "status": "pending"
+                        })
+                        section_id += 1
 
         # Main Evidence section header
         sections_plan.append({
@@ -1328,6 +1458,119 @@ async def generate_plan(
         }
 
 
+async def _calculate_tasklist_pages(section_type: str, month: int) -> int:
+    """Calculate how many pages needed for a specific task list type - filtered by month"""
+    try:
+        table_id = config.NOCODB_TABLES.get("tasklist")
+        if not table_id:
+            return 0
+
+        nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
+        kategori_mapping = {
+            "kualitas": "Detail Aktivitas Kualitas Kode",
+            "waktu": "Detail Aktivitas Waktu Rilis Fitur",
+            "dukungan": "Detail Aktivitas Dukungan Support"
+        }
+
+        kategori_name = kategori_mapping.get(section_type)
+        if not kategori_name:
+            return 0
+
+        # Convert month number to Indonesian month name for filtering
+        month_names = {
+            1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+            5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+            9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+        }
+        month_name = month_names.get(month, 'Januari')
+
+        # Filter by month using Indonesian month name
+        where_clause = f"(Month,eq,{month_name})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
+        response = nocodb.get_records(limit=2000, where=where_clause)
+        records = response.get('list', []) if response else []
+
+        if not records:
+            return 0
+
+        # Calculate pages needed (max 10 items per page)
+        items_per_page = 10
+        total_items = len(records)
+        total_pages = (total_items + items_per_page - 1) // items_per_page  # Ceiling division
+
+        return total_pages
+
+    except Exception as e:
+        print(f"Error calculating pages for {section_type}: {e}")
+        return 1  # Default to 1 page if error
+
+
+async def _calculate_iot_tasklist_pages(section_type: str, month: int) -> int:
+    """Calculate how many pages needed for IoT task list type - based on data availability"""
+    try:
+        if section_type == "respon":
+            # Use PostgreSQL view for respon section
+            import psycopg2
+            from datetime import datetime
+
+            conn = psycopg2.connect(config.DB_URL)
+            cursor = conn.cursor()
+
+            current_year = datetime.now().year
+
+            # Count records from PostgreSQL view
+            cursor.execute("""
+            SELECT COUNT(*) FROM public.vw_sla_iot_operations
+            WHERE tanggal_problem LIKE %s
+            """, (f"{current_year}/{month:02d}/%",))
+
+            count = cursor.fetchone()[0]
+            cursor.close()
+            conn.close()
+
+            if count == 0:
+                return 0
+
+            # Calculate pages needed (max 10 items per page)
+            items_per_page = 10
+            total_pages = (count + items_per_page - 1) // items_per_page
+            return total_pages
+
+        else:
+            # For "problem" and "aktivitas", use IoT tasklist data
+            table_id = config.NOCODB_TABLES.get("tasklist_iot")
+            if not table_id:
+                return 0
+
+            nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
+
+            # Convert month to Indonesian name
+            month_names = {
+                1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+                5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+                9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+            }
+            month_name = month_names.get(month, 'Januari')
+
+            # Use Month filter for IoT tasklist data
+            where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
+            response = nocodb.get_records(limit=2000, where=where_clause)
+            records = response.get('list', []) if response else []
+
+            if not records:
+                return 0
+
+            # Calculate pages needed (max 10 items per page)
+            items_per_page = 10
+            total_items = len(records)
+            total_pages = (total_items + items_per_page - 1) // items_per_page
+
+            return total_pages
+
+    except Exception as e:
+        print(f"Error calculating IoT pages for {section_type}: {e}")
+        return 1  # Default to 1 page if error
+
+
 async def _generate_section_logic(request: Request, section_id: int, plan_id: str):
     """Logic to generate a specific section by ID"""
     try:
@@ -1379,8 +1622,12 @@ async def _generate_section_logic(request: Request, section_id: int, plan_id: st
             }
 
         elif section["type"] == "tasklist":
+            # Pass pagination info if available
+            page_number = section.get("page_number", 1)
+            total_pages = section.get("total_pages", 1)
+
             section_content = await _generate_single_tasklist_section(
-                section["section_type"], plan["month"], plan["type"], request
+                section["section_type"], plan["month"], plan["type"], request, page_number, total_pages
             )
             if section_content:
                 section_content["title"] = section["title"]  # Use plan title
@@ -1568,13 +1815,13 @@ async def _generate_single_timesheet_section(employee_name: str, month: int, yea
         return None
 
 
-async def _generate_single_tasklist_section(section_type: str, month: int, report_type: str, request: Request):
+async def _generate_single_tasklist_section(section_type: str, month: int, report_type: str, request: Request, page_number: int = 1, total_pages: int = 1):
     """Generate single tasklist section"""
     try:
         if report_type == "iotoperation":
             html_content = await _get_iot_tasklist_html_content(month, section_type, request)
         else:
-            html_content = await _get_developer_tasklist_html_content(month, section_type, request)
+            html_content = await _get_developer_tasklist_html_content(month, section_type, request, page_number, total_pages)
 
         if html_content:
             title_map = {
@@ -1724,10 +1971,8 @@ async def _get_iot_tasklist_html_content(month: int, section_type: str, request:
             return ""
 
         nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
-        # Use Unique_Key filtering for month-specific records (consistent with other functions)
-        current_year = datetime.now().year
-        year_month_pattern = f"{current_year}-{month:02d}-"
-        where_clause = f"(Unique Key,like,{year_month_pattern}%)~and(Status,eq,Closed)"
+        # Use Month filtering to be consistent with pagination calculation
+        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
         response = nocodb.get_records(limit=2000, where=where_clause)
         raw_records = response.get('list', []) if response else []
 
@@ -1745,15 +1990,17 @@ async def _get_iot_tasklist_html_content(month: int, section_type: str, request:
 
         if section_type == "problem":
             return await _generate_iot_problem_page(request, records, month_name)
-        else:  # aktivitas
+        elif section_type == "aktivitas":
             return await _generate_iot_aktivitas_page(request, records, month_name)
+        else:  # respon
+            return await _generate_iot_respon_page(request, records, month_name)
 
     except Exception as e:
         print(f"Error generating IoT tasklist section {section_type}: {e}")
         return ""
 
 
-async def _get_developer_tasklist_html_content(month: int, section_type: str, request: Request):
+async def _get_developer_tasklist_html_content(month: int, section_type: str, request: Request, page_number: int = 1, total_pages: int = 1):
     """Generate Developer tasklist HTML content for specific section"""
     try:
         # Get date range for the month
@@ -1804,12 +2051,22 @@ async def _get_developer_tasklist_html_content(month: int, section_type: str, re
                 str(end_date_val).strip() not in ['', 'N/A', 'null', 'None']):
                 records.append(record)
 
+        # Apply pagination to records
+        items_per_page = 10
+        start_idx = (page_number - 1) * items_per_page
+        end_idx = start_idx + items_per_page
+        paginated_records = records[start_idx:end_idx]
+
+        # Renumber items for the page (adjust numbering)
+        for i, record in enumerate(paginated_records):
+            record['_page_number'] = start_idx + i + 1  # Global numbering
+
         if section_type == "kualitas":
-            return await _generate_dev_kualitas_data(request, records, month_name)
+            return await _generate_dev_kualitas_data(request, paginated_records, month_name, page_number, total_pages)
         elif section_type == "waktu":
-            return await _generate_dev_rilis_data(request, records, month_name)
+            return await _generate_dev_rilis_data(request, paginated_records, month_name, page_number, total_pages)
         elif section_type == "dukungan":
-            return await _generate_dev_support_data(request, records, month_name)
+            return await _generate_dev_support_data(request, paginated_records, month_name, page_number, total_pages)
 
         return ""
 
@@ -1989,39 +2246,172 @@ async def _get_iot_tasklist_html_sections(month: int, request: Request):
     return html_sections
 
 async def _get_developer_tasklist_html_sections(month: int, request: Request):
-    """Get Developer tasklist HTML sections"""
+    """Get Developer tasklist HTML sections with pagination for task lists"""
     html_sections = []
     pages = ["pelaksanaan", "kualitas", "rilis", "support"]
 
     for page in pages:
         try:
-            dev_html = await _call_developer_endpoint(page, month, request)
-            if dev_html:
-                title = f'Developer {page.title()}'
-                if page == "pelaksanaan":
+            if page == "pelaksanaan":
+                # Handle pelaksanaan normally (no pagination needed)
+                dev_html = await _call_developer_endpoint(page, month, request)
+                if dev_html:
                     title = "Pelaksanaan Pekerjaan"
-                elif page == "kualitas":
-                    title = "Detail Aktivitas Kualitas Kode"
-                elif page == "rilis":
-                    title = "Detail Aktivitas Waktu Rilis"
-                elif page == "support":
-                    title = "Detail Aktivitas Dukungan Support"
+                    body_content = re.search(r'<body[^>]*>(.*?)</body>', dev_html, re.DOTALL)
+                    if body_content:
+                        isolated_content = f'<div class="dev-tasklist-section">{body_content.group(1)}</div>'
+                    else:
+                        isolated_content = f'<div class="dev-tasklist-section">{dev_html}</div>'
 
-                body_content = re.search(r'<body[^>]*>(.*?)</body>', dev_html, re.DOTALL)
-                if body_content:
-                    isolated_content = f'<div class="dev-tasklist-section">{body_content.group(1)}</div>'
-                else:
-                    isolated_content = f'<div class="dev-tasklist-section">{dev_html}</div>'
+                    html_sections.append({
+                        'type': f'dev_{page}',
+                        'title': title,
+                        'content': isolated_content
+                    })
+            else:
+                # Handle task lists (kualitas, rilis, support) with pagination
+                paginated_sections = await _get_paginated_tasklist_sections(page, month, request)
+                html_sections.extend(paginated_sections)
 
-                html_sections.append({
-                    'type': f'dev_{page}',
-                    'title': title,
-                    'content': isolated_content
-                })
         except Exception as e:
             pass
 
     return html_sections
+
+async def _get_paginated_tasklist_sections(page: str, month: int, request: Request):
+    """Get paginated task list sections - max 10 items per page"""
+    sections = []
+
+    # Get data directly from nocodb instead of HTML
+    table_id = config.NOCODB_TABLES.get("tasklist")
+    if not table_id:
+        return sections
+
+    nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
+    kategori_mapping = {
+        "kualitas": "Detail Aktivitas Kualitas Kode",
+        "rilis": "Detail Aktivitas Waktu Rilis Fitur",
+        "support": "Detail Aktivitas Dukungan Support"
+    }
+
+    kategori_name = kategori_mapping.get(page)
+    if not kategori_name:
+        return sections
+
+    # Convert month number to Indonesian month name for filtering
+    month_names = {
+        1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+        5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+        9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+    }
+    month_name = month_names.get(month, 'Januari')
+
+    # Filter by month using Indonesian month name
+    where_clause = f"(Month,eq,{month_name})~and(Kategori,eq,{kategori_name})~and(Status,eq,Closed)"
+    response = nocodb.get_records(limit=2000, where=where_clause)
+    records = response.get('list', []) if response else []
+
+    if not records:
+        return sections
+
+    # Process data similar to original functions
+    task_data = []
+    for i, record in enumerate(records, 1):
+        task_list = record.get('Task List', 'No Task Description')
+        requestor = record.get('Requestor', 'N/A')
+        pic_list = record.get('PIC', [])
+        pic = ', '.join(pic_list) if isinstance(pic_list, list) else str(pic_list or 'N/A')
+        status = record.get('Status', 'N/A')
+        start_date = record.get('Start Date', '')
+        end_date = record.get('End Date', '')
+        pencapaian = record.get('Pencapaian', 0)
+
+        formatted_start = start_date.replace('-', '/') if start_date else 'N/A'
+        formatted_end = end_date.replace('-', '/') if end_date else 'N/A'
+
+        task_data.append({
+            "no": i,
+            "task_list": task_list,
+            "requestor": requestor,
+            "pic": pic,
+            "status": status,
+            "start_date": formatted_start,
+            "end_date": formatted_end,
+            "pencapaian": str(pencapaian)
+        })
+
+    # Calculate summary
+    valid_pencapaian = [record.get('Pencapaian', 0) for record in records if record.get('Pencapaian') is not None]
+    total_pencapaian = sum(int(p) for p in valid_pencapaian if p != 0)
+    avg_pencapaian = total_pencapaian // len(valid_pencapaian) if valid_pencapaian else 0
+
+    # Split data into pages with max 10 items per page
+    items_per_page = 10
+    total_items = len(task_data)
+    total_pages = (total_items + items_per_page - 1) // items_per_page
+
+    # Base section numbering
+    base_numbers = {
+        "kualitas": "2.1",
+        "rilis": "2.2",
+        "support": "2.3"
+    }
+
+    base_num = base_numbers.get(page, "2.1")
+
+    # Template mapping
+    template_mapping = {
+        "kualitas": "tasklistdeveloper/detail_aktivitas_kualitas_kode.html",
+        "rilis": "tasklistdeveloper/detail_aktivitas_waktu_rilis.html",
+        "support": "tasklistdeveloper/detail_aktivitas_dukungan_support.html"
+    }
+
+    template_name = template_mapping.get(page)
+    if not template_name:
+        return sections
+
+    data_key_mapping = {
+        "kualitas": "kualitas_kode_data",
+        "rilis": "waktu_rilis_data",
+        "support": "dukungan_support_data"
+    }
+
+    data_key = data_key_mapping.get(page)
+
+    for page_num in range(1, total_pages + 1):
+        start_idx = (page_num - 1) * items_per_page
+        end_idx = min(start_idx + items_per_page, total_items)
+        page_data = task_data[start_idx:end_idx]
+
+        # Show summary only on the last page
+        show_summary = (page_num == total_pages)
+        summary_data = avg_pencapaian if show_summary else ""
+
+        template = templates.get_template(template_name)
+        template_data = {
+            "request": request,
+            data_key: page_data,
+            "summary_pencapaian": str(summary_data),
+            "month": ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+                     "Juli", "Agustus", "September", "Oktober", "November", "Desember"][month]
+        }
+
+        page_html = template.render(template_data)
+
+        # Extract body content
+        body_content = re.search(r'<body[^>]*>(.*?)</body>', page_html, re.DOTALL)
+        if body_content:
+            isolated_content = f'<div class="dev-tasklist-section">{body_content.group(1)}</div>'
+        else:
+            isolated_content = f'<div class="dev-tasklist-section">{page_html}</div>'
+
+        sections.append({
+            'type': f'dev_{page}',
+            'title': f'{base_num}.{page_num} {kategori_name}' + (f' (Halaman {page_num})' if total_pages > 1 else ''),
+            'content': isolated_content
+        })
+
+    return sections
 
 async def _call_iot_endpoint(page: str, month: int, request: Request):
     """Call IoT endpoint logic and return HTML content"""
