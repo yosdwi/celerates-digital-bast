@@ -797,8 +797,8 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     })
 
 
-async def _generate_iot_respon_page(request: Request, records: list, month_name: str):
-    """Generate response time page from PostgreSQL vw_sla_iot_operations view"""
+async def _generate_iot_respon_page(request: Request, records: list, month_name: str, page_number: int = 1, total_pages: int = 1):
+    """Generate response time page from PostgreSQL vw_sla_iot_operations view with pagination"""
     import psycopg2
     from datetime import datetime
 
@@ -819,7 +819,11 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
         month_num = month_mapping.get(month_name, 1)
         current_year = datetime.now().year
 
-        # Filter by tanggal_problem for the specific month
+        # Calculate pagination offset
+        items_per_page = 10
+        offset = (page_number - 1) * items_per_page
+
+        # Filter by tanggal_problem for the specific month with pagination
         cursor.execute("""
         SELECT
             problem,
@@ -840,7 +844,8 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
         FROM public.vw_sla_iot_operations
         WHERE tanggal_problem LIKE %s
         ORDER BY id
-        """, (f"{current_year}/{month_num:02d}/%",))
+        LIMIT %s OFFSET %s
+        """, (f"{current_year}/{month_num:02d}/%", items_per_page, offset))
 
         rows = cursor.fetchall()
 
@@ -1819,7 +1824,7 @@ async def _generate_single_tasklist_section(section_type: str, month: int, repor
     """Generate single tasklist section"""
     try:
         if report_type == "iotoperation":
-            html_content = await _get_iot_tasklist_html_content(month, section_type, request)
+            html_content = await _get_iot_tasklist_html_content(month, section_type, request, page_number, total_pages)
         else:
             html_content = await _get_developer_tasklist_html_content(month, section_type, request, page_number, total_pages)
 
@@ -1950,8 +1955,8 @@ async def _generate_single_employee_attendance(employee_name: str, employee_mapp
         return None
 
 
-async def _get_iot_tasklist_html_content(month: int, section_type: str, request: Request):
-    """Generate IoT tasklist HTML content for specific section"""
+async def _get_iot_tasklist_html_content(month: int, section_type: str, request: Request, page_number: int = 1, total_pages: int = 1):
+    """Generate IoT tasklist HTML content for specific section with pagination"""
     try:
         # Get date range for the month
         current_year = datetime.now().year
@@ -1988,12 +1993,18 @@ async def _get_iot_tasklist_html_content(month: int, section_type: str, request:
                 str(end_date_val).strip() not in ['', 'N/A', 'null', 'None']):
                 records.append(record)
 
+        # Apply pagination to records
+        items_per_page = 10
+        start_idx = (page_number - 1) * items_per_page
+        end_idx = start_idx + items_per_page
+        paginated_records = records[start_idx:end_idx]
+
         if section_type == "problem":
-            return await _generate_iot_problem_page(request, records, month_name)
+            return await _generate_iot_problem_page(request, paginated_records, month_name)
         elif section_type == "aktivitas":
-            return await _generate_iot_aktivitas_page(request, records, month_name)
+            return await _generate_iot_aktivitas_page(request, paginated_records, month_name)
         else:  # respon
-            return await _generate_iot_respon_page(request, records, month_name)
+            return await _generate_iot_respon_page(request, paginated_records, month_name, page_number, total_pages)
 
     except Exception as e:
         print(f"Error generating IoT tasklist section {section_type}: {e}")
