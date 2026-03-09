@@ -256,17 +256,25 @@ class ClsNocoDBProcessor:
 
         unique_keys = list(records_to_update.keys())
         existing_keys = {}
+        existing_records_map = {}
 
         # Process unique keys in batches to avoid 414 Request-URI Too Large
         batch_size = 100  # Reduce batch size for unique key queries
         for i in range(0, len(unique_keys), batch_size):
             batch_keys = unique_keys[i:i + batch_size]
             where_clause = f"(Unique Key,in,{','.join(batch_keys)})"
-            existing_records_response = self.get_records(limit=len(batch_keys), where=where_clause)
+            existing_records_response = self.get_records(
+                limit=len(batch_keys),
+                where=where_clause,
+                fields="id,Unique Key,Last Modified,Remarks,Is Holiday"
+            )
 
             if existing_records_response and existing_records_response.get('list'):
                 for record in existing_records_response['list']:
-                    existing_keys[record['Unique Key']] = record['Id']
+                    uk = record.get('Unique Key')
+                    if uk:
+                        existing_keys[uk] = record['Id']
+                        existing_records_map[uk] = record
 
         records_to_create_data = []
         updates_to_process = []
@@ -279,6 +287,28 @@ class ClsNocoDBProcessor:
 
             if unique_key in existing_keys:
                 record_id = existing_keys[unique_key]
+                
+                existing_record = existing_records_map.get(unique_key)
+                if existing_record:
+                    last_modified_by = existing_record.get("Last Modified")
+
+                    is_system_update = False
+                    if last_modified_by:
+                        modifier = ""
+                        if isinstance(last_modified_by, dict):
+                            modifier = last_modified_by.get('email', '').lower()
+                        else:
+                            modifier = str(last_modified_by).lower()
+                        
+                        if 'system' in modifier:
+                            is_system_update = True
+                    
+                    if not is_system_update:
+                        if 'Remarks' in existing_record and existing_record['Remarks'] is not None:
+                            record_data['Remarks'] = existing_record['Remarks']
+                        if 'Is Holiday' in existing_record and existing_record['Is Holiday'] is not None:
+                            record_data['Is Holiday'] = existing_record['Is Holiday']
+                
                 updates_to_process.append((record_id, record_data))
             else:
                 records_to_create_data.append((clean_record, record_data))  # (clean, with_metadata)

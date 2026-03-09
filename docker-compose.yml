@@ -34,6 +34,8 @@ services:
       - HEALTHCHECK_URL=https://hc-ping.com/c67ead79-ffdd-4517-b360-fa03763a3df6
       - DB_URL=postgresql://celerates-admin:celerates911!!!@postgresql-local-postgre-1:5432/neondb
     command: ["sleep", "infinity"]
+    networks:
+      - digital-bast-network
     deploy:
       resources:
         limits:

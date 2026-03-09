@@ -41,7 +41,7 @@
 .ritz .waffle .s48{border-bottom:1px SOLID transparent;border-right:3px DOUBLE transparent;background-color:#ffd965;text-align:left;color:#000000;font-family:docs-Calibri,Arial;font-size:10pt;vertical-align:bottom;white-space:nowrap;direction:ltr;padding:0px 3px 0px 3px;}
 .ritz .waffle .s13{background-color:#ffffff;text-align:left;color:#000000;font-family:docs-Calibri,Arial;font-size:11pt;vertical-align:middle;white-space:nowrap;direction:ltr;padding:0px 3px 0px 3px;}
 .ritz .waffle .s24{border-bottom:1px SOLID transparent;border-right:1px SOLID transparent;background-color:#ffffff;text-align:right;font-weight:bold;color:#000000;font-family:docs-Calibri,Arial;font-size:10pt;vertical-align:middle;white-space:nowrap;direction:ltr;padding:0px 3px 0px 3px;}
-.ritz .waffle .s39{border-right:3px DOUBLE transparent;background-color:#f4b083;text-align:left;color:#000000;font-family:docs-Calibri,Arial;font-size:9pt;vertical-align:middle;white-space:normal;overflow:hidden;word-wrap:break-word;direction:ltr;padding:0px 3px 0px 3px;}
+.ritz .waffle .s39{border-right:3px DOUBLE transparent;background-color:#f4b083;text-align:left;color:#000000;font-family:docs-Calibri,Arial;font-size:10pt;vertical-align:middle;white-space:normal;overflow:hidden;word-wrap:break-word;direction:ltr;padding:0px 3px 0px 3px;}
 .ritz .waffle .s18{background-color:#ffffff;text-align:left;font-weight:bold;color:#000000;font-family:docs-Calibri,Arial;font-size:10pt;vertical-align:top;white-space:nowrap;direction:ltr;padding:0px 3px 0px 3px;}
 .ritz .waffle .s34{border-right:1px SOLID transparent;background-color:#ffffff;}
 .ritz .waffle .s35{border-bottom:1px SOLID transparent;border-right:3px DOUBLE transparent;background-color:#f4b083;text-align:right;font-style:italic;color:#000000;font-family:docs-Calibri,Arial;font-size:10pt;vertical-align:bottom;white-space:nowrap;direction:ltr;padding:0px 3px 0px 3px;}
@@ -56,7 +56,7 @@
 .ritz .waffle .s54{border-bottom:1px SOLID transparent;border-right:3px DOUBLE transparent;background-color:#f4b083;text-align:center;color:#000000;font-family:docs-Calibri,Arial;font-size:11pt;vertical-align:bottom;white-space:nowrap;direction:ltr;padding:0px 3px 0px 3px;}
 .ritz .waffle .s44{border-bottom:1px SOLID transparent;border-right:3px DOUBLE transparent;background-color:#ffc000;text-align:left;color:#000000;font-family:docs-Calibri,Arial;font-size:10pt;vertical-align:middle;white-space:normal;word-wrap:break-word;direction:ltr;padding:0px 3px 0px 3px;}
 .ritz .waffle .s20{background-color:#ffffff;text-align:right;font-weight:bold;color:#000000;font-family:docs-Calibri,Arial;font-size:10pt;vertical-align:bottom;white-space:nowrap;direction:ltr;padding:0px 3px 0px 3px;}
-.ritz .waffle .s45{border-right:3px DOUBLE transparent;background-color:#b4c6e7;text-align:left;color:#000000;font-family:docs-Calibri,Arial;font-size:9pt;vertical-align:middle;white-space:normal;overflow:hidden;word-wrap:break-word;direction:ltr;padding:0px 3px 0px 3px;}
+.ritz .waffle .s45{border-right:3px DOUBLE transparent;background-color:#b4c6e7;text-align:left;color:#000000;font-family:docs-Calibri,Arial;font-size:10pt;vertical-align:middle;white-space:normal;overflow:hidden;word-wrap:break-word;direction:ltr;padding:0px 3px 0px 3px;}
 .ritz .waffle .s9{border-left:none;border-right:none;background-color:#ffffff;text-align:left;font-weight:bold;color:#000000;font-family:docs-Calibri,Arial;font-size:10pt;vertical-align:middle;white-space:nowrap;direction:ltr;padding:0px 3px 0px 3px;}
 .data-table-section td:not(:first-child), .data-table-section th:not(:first-child) { border: 1px solid #000000 !important; }
 .data-table-section td:first-child, .data-table-section th:first-child { border: none !important; }
@@ -77,11 +77,20 @@
     width: 100% !important;
 }
 
-/* Resize timesheet to 50% */
+/* Center align No. column (column 2) and Remarks column (column 14) both horizontally and vertically */
+.data-table-section td:nth-child(2),
+.data-table-section th:nth-child(2),
+.data-table-section td:nth-child(14),
+.data-table-section th:nth-child(14) {
+    text-align: center !important;
+    vertical-align: middle !important;
+}
+
+/* Resize timesheet to 65% */
 .ritz.grid-container {
-    transform: scale(0.5);
+    transform: scale(0.65);
     transform-origin: top left;
-    width: 200%;
+    width: 154%;
 }
 </style>
 
@@ -89,12 +98,12 @@
 <div class="ritz grid-container" dir="ltr" style="page-break-after: always;">
 <table class="waffle" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">
 <colgroup>
-<col style="width: 50px;">  <!-- Column A -->
-<col style="width: 40px;">  <!-- Column B -->
-<col style="width: 80px;">  <!-- Column C -->
-<col style="width: 100px;"> <!-- Column D -->
-<col style="width: 300px;"> <!-- Column E -->
-<col style="width: 300px;"> <!-- Column F -->
+<col style="width: 20px;">  <!-- Column A -->
+<col style="width: 60px;">  <!-- Column B - No. column -->
+<col style="width: 120px;"> <!-- Column C - wider for dates -->
+<col style="width: 110px;"> <!-- Column D - Activity (further reduced) -->
+<col style="width: 290px;"> <!-- Column E - Project Name (increased) -->
+<col style="width: 310px;"> <!-- Column F - Work Description (reduced) -->
 <col style="width: 60px;">  <!-- Column G - Start Time -->
 <col style="width: 60px;">  <!-- Column H - End Time -->
 <col style="width: 60px;">  <!-- Column I - Break Hours -->
@@ -102,9 +111,9 @@
 <col style="width: 60px;">  <!-- Column K - Overtime Hours -->
 <col style="width: 60px;">  <!-- Column L - Regular Hours -->
 <col style="width: 60px;">  <!-- Column M - Is Holiday -->
-<col style="width: 100px;"> <!-- Column N - Remarks -->
-<col style="width: 50px;">  <!-- Column O - TTD -->
-<col style="width: 50px;">  <!-- Column P - Space -->
+<col style="width: 120px;"> <!-- Column N - Remarks -->
+<col style="width: 60px;">  <!-- Column O - TTD -->
+<col style="width: 20px;">  <!-- Column P - Space -->
 </colgroup>
 <tbody>
 <tr style="height: 18px">
@@ -115,9 +124,10 @@
 <td class="s2"></td>
 <td class="s0"></td>
 <td class="s0"></td>
-<td class="s3"></td>
-<td class="s4"></td>
-<td class="s5 softmerge"><div class="softmerge-inner" style="width:86px;left:-26px">SELECT NAME :</td>
+<!-- <td class="s3"></td> -->
+<!-- <td class="s4"></td> -->
+<td class="s5">SELECT NAME :</td>
+<td class="s0"></td>
 <td class="s0"></td>
 <td class="s6" dir="ltr" colspan="2">{{ report.nama }}</td>
 <td class="s0"></td>
@@ -128,14 +138,15 @@
 <td class="s0"></td>
 <td class="s1"></td>
 <td class="s1"></td>
-<td class="s7"></td>
+<!-- <td class="s7"></td> -->
 <td class="s8">EMPLOYEE ACTIVITY REPORT &amp; TIMESHEET</td>
 <td class="s0"></td>
 <td class="s0"></td>
-<td class="s4"></td>
-<td class="s5 softmerge"><div class="softmerge-inner" style="width:86px;left:-26px">TALENT ID. :</div></td>
+<!-- <td class="s4"></td> -->
+<td class="s5">TALENT ID. :</td>
 <td class="s0"></td>
-<td class="s9 softmerge"><div class="softmerge-inner" style="width:194px;left:-1px">{{ report.employee_id }}</div></td>
+<td class="s0"></td>
+<td class="s9" colspan="2">{{ report.employee_id }}</td>
 <td class="s10"></td>
 <td class="s11"></td>
 <td class="s12"></td>
@@ -148,11 +159,12 @@
 <td class="s2"></td>
 <td class="s13"></td>
 <td class="s0"></td>
+<!-- <td class="s0"></td> -->
+<!-- <td class="s4"></td> -->
+<td class="s5">SUPERVISOR/REP-MGR :</td>
 <td class="s0"></td>
-<td class="s4"></td>
-<td class="s5 softmerge"><div class="softmerge-inner" style="width:164px;left:-26px">SUPERVISOR/REP-MGR :</div></td>
 <td class="s0"></td>
-<td class="s9 softmerge"><div class="softmerge-inner" style="width:194px;left:-1px">Riza Wahyu Syah R</div></td>
+<td class="s9"colspan="2">Riza Wahyu Syah R</td>
 <td class="s11"></td>
 <td class="s11"></td>
 <td class="s2"></td>
@@ -160,7 +172,7 @@
 </tr>
 <tr style="height: 18px">
 <td class="s0"></td>
-<td class="s5 softmerge"><div class="softmerge-inner" style="width:142px;left:-29px">REPORTING PERIOD :</div></td>
+<td class="s5">REPORTING PERIOD :</td>
 <td class="s16"></td>
 <td class="s17"></td>
 <td class="s0"></td>
@@ -215,8 +227,8 @@
 <td class="s32">Activity</td>
 <td class="s32">Project Name</td>
 <td class="s32" dir="ltr">Work Description</td>
-<td class="s33">Start Time (HH:MM)</td>
-<td class="s33">End Time (HH:MM)</td>
+<td class="s33">Start Time<br>(HH:MM)</td>
+<td class="s33">End Time<br>(HH:MM)</td>
 <td class="s33">Break Hours</td>
 <td class="s33">Total Hours</td>
 <td class="s33">Over Time <br>Hours</td>
@@ -268,10 +280,11 @@
 <td class="s0"></td>
 <td class="s0"></td>
 <td class="s17" colspan="2">ACTIVITY REPORT SUMMARY</td>
-<td class="s17" colspan="1" style="text-align: right;">Overtime Hours Details</td>
+<td class="s0"></td>
+<td class="s17" style="text-align: left;">Overtime Hours Details</td>
 <td class="s0"></td>
 <td class="s0"></td>
-<td class="s0"></td>
+<!-- <td class="s0"></td> -->
 <td class="s0"></td>
 <td class="s0" style="border-top: 1px solid #000; border-left: 1px solid #000; border-right: 1px solid #000; text-align: center; font-weight: bold; padding: 5px;" colspan="2">Date</td>
 <td class="s0" style="border-top: 1px solid #000; border-right: 1px solid #000; text-align: center; font-weight: bold; padding: 5px;" colspan="3">Client Approval</td>
@@ -281,12 +294,13 @@
 <td class="s0"></td>
 <td class="s0"></td>
 <td class="s17">Total working hours</td>
-<td class="s17" style="text-align: right;">: 00 Hours</td>
+<td class="s17" style="text-align: left;">: 00 Hours</td>
+<td class="s0"></td>
+
+<td class="s17" style="text-align: left;">OT in Working days :</td>
+<td class="s17" style="text-align: left;"">0.00</td>
+<td class="s0"></td>
 <!-- <td class="s0"></td> -->
-<td class="s17" style="text-align: right;">OT in Working days :</td>
-<td class="s17">0.00</td>
-<td class="s0"></td>
-<td class="s0"></td>
 <td class="s0"></td>
 <td class="s0" style="border-left: 1px solid #000; border-right: 1px solid #000; vertical-align: top;" colspan="2" rowspan="6"></td>
 <td class="s0" style="border-right: 1px solid #000; vertical-align: top;" colspan="3" rowspan="6"></td>
@@ -297,10 +311,10 @@
 <td class="s0"></td>
 <td class="s17">Regular hours</td>
 <td class="s17" style="text-align: right;">: 00 -> equal to 00 days</td>
+<td class="s0"></td>
+<td class="s17" style="text-align: left;">OT in Weekend (Sat, Sun):</td>
+<td class="s0"></td>
 <!-- <td class="s0"></td> -->
-<td class="s17" style="text-align: right;">OT in Weekend (Sat, Sun):</td>
-<td class="s0"></td>
-<td class="s0"></td>
 <td class="s0"></td>
 <td class="s0"></td>
 </tr>
@@ -309,10 +323,10 @@
 <td class="s0"></td>
 <td class="s17">Overtime hours</td>
 <td class="s17" style="text-align: right;">: 00 -> (Approval required)</td>
+<td class="s0"></td>
+<td class="s17" style="text-align: left;">OT in National Holidays:</td>
+<td class="s0"></td>
 <!-- <td class="s0"></td> -->
-<td class="s17" style="text-align: right;">OT in National Holidays:</td>
-<td class="s0"></td>
-<td class="s0"></td>
 <td class="s0"></td>
 <td class="s0"></td>
 </tr>
