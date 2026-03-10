@@ -437,9 +437,12 @@
             }
         }
 
-        /* Hide overflow in preview */
+        /* Simple fix: make everything visible */
         .page {
-            overflow: hidden;
+            overflow: visible !important;
+        }
+        .page * {
+            overflow: visible !important;
         }
 
         /* Reset button styling */
@@ -541,6 +544,30 @@
                 max-width: 100% !important;
                 max-height: 90vh !important;
                 page-break-inside: avoid;
+                object-fit: contain !important;
+            }
+
+            /* Ensure tables don't get cut off */
+            table {
+                table-layout: auto !important;
+                width: 100% !important;
+                break-inside: auto !important;
+                border-collapse: collapse !important;
+            }
+
+            td, th {
+                word-wrap: break-word !important;
+                overflow-wrap: break-word !important;
+                white-space: normal !important;
+                padding: 2px 4px !important;
+                border: 1px solid #ddd !important;
+                vertical-align: top !important;
+            }
+
+            /* Force text content to be visible */
+            .timesheet-content * {
+                overflow: visible !important;
+                text-overflow: clip !important;
             }
         }
     </style>
@@ -1161,20 +1188,35 @@
 
                 console.log(`Processing page ${pageIndex + 1}/${totalPages}`);
 
-                // Use html2canvas to capture the page as image
-                html2canvas(page, {
-                    scale: 1.5,
-                    useCORS: true,
-                    allowTaint: true,
-                    backgroundColor: '#ffffff',
-                    width: 794,
-                    height: 1123
-                }).then(canvas => {
+                // Ensure page is fully rendered before capture
+                setTimeout(() => {
+                    // Force layout recalculation
+                    page.style.transform = 'translateZ(0)';
+                    page.offsetHeight; // Force reflow
+
+                    // Get actual content dimensions
+                    const pageRect = page.getBoundingClientRect();
+                    const actualWidth = Math.max(794, page.scrollWidth, pageRect.width);
+                    const actualHeight = Math.max(1123, page.scrollHeight, pageRect.height);
+
+                    console.log(`Capturing page ${pageIndex + 1}: ${actualWidth}x${actualHeight}`);
+
+                    // Simple high-quality capture
+                    html2canvas(page, {
+                        scale: 3,
+                        useCORS: true,
+                        allowTaint: true,
+                        backgroundColor: '#ffffff'
+                    }).then(canvas => {
                     const pageEndTime = Date.now();
                     const pageProcessingTime = pageEndTime - pageStartTime;
                     pageProcessingTimes.push(pageProcessingTime);
 
-                    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                    // Reset page transform
+                    page.style.transform = '';
+
+                    // Use PNG for better quality, especially for text
+                    const imgData = canvas.toDataURL('image/png', 1.0);
 
                     // Add new page if not first page
                     if (hasAddedPage) {
@@ -1186,12 +1228,14 @@
                     const imgWidth = 210; // A4 width in mm
                     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-                    // Add image to PDF
-                    doc.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
+                    // Add image to PDF with PNG format for better quality
+                    doc.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
 
-                    // Process next page
+                    // Process next page with longer delay for better rendering
                     pageIndex++;
-                    setTimeout(() => processNextPage(), 100);
+                    setTimeout(() => processNextPage(), 300);
+
+                }, 500); // Wait 500ms for proper rendering
 
                 }).catch(error => {
                     console.error('Error capturing page:', error);
@@ -1199,14 +1243,24 @@
                     const pageProcessingTime = pageEndTime - pageStartTime;
                     pageProcessingTimes.push(pageProcessingTime); // Still track time even on error
 
-                    // Skip this page and continue
+                    // Reset page transform in case of error
+                    page.style.transform = '';
+
+                    // Skip this page and continue with longer delay
                     pageIndex++;
-                    setTimeout(() => processNextPage(), 100);
+                    setTimeout(() => processNextPage(), 500);
                 });
             }
 
-            // Start processing
-            setTimeout(() => processNextPage(), 500);
+            // Initialize better rendering before starting
+            // Force fonts to load
+            document.fonts.ready.then(() => {
+                // Start processing after fonts are loaded
+                setTimeout(() => processNextPage(), 1000);
+            }).catch(() => {
+                // Fallback if fonts.ready is not supported
+                setTimeout(() => processNextPage(), 2000);
+            });
         }
 
         function backToAdmin() {
