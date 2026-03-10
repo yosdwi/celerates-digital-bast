@@ -437,12 +437,25 @@
             }
         }
 
-        /* Simple fix: make everything visible */
+        /* Complete fix for text cutting */
         .page {
             overflow: visible !important;
+            min-height: auto !important;
         }
         .page * {
             overflow: visible !important;
+            text-overflow: unset !important;
+            white-space: normal !important;
+            word-wrap: break-word !important;
+        }
+
+        /* Force table cells to show all content */
+        .page table, .page td, .page th {
+            overflow: visible !important;
+            text-overflow: unset !important;
+            white-space: normal !important;
+            word-wrap: break-word !important;
+            border-collapse: collapse !important;
         }
 
         /* Reset button styling */
