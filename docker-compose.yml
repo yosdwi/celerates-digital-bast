@@ -57,14 +57,14 @@ services:
       # ofelia.job-exec.step_03_process_redmine_tasks.command: "python main.py --step step_03_process_redmine_tasks"
       
       # Reduced frequency to lower CPU usage
-      ofelia.job-exec.step_04_generate_timesheets.schedule: "*/10 * * * *" # Runs every 10 minutes
-      ofelia.job-exec.step_04_generate_timesheets.container: "digital-bast-app"
-      ofelia.job-exec.step_04_generate_timesheets.command: "python main.py --step step_04_generate_timesheets"
+      # ofelia.job-exec.step_04_generate_timesheets.schedule: "*/10 * * * *" # Runs every 10 minutes
+      # ofelia.job-exec.step_04_generate_timesheets.container: "digital-bast-app"
+      # ofelia.job-exec.step_04_generate_timesheets.command: "python main.py --step step_04_generate_timesheets"
 
-      # Generate Unique Keys for all tables
-      ofelia.job-exec.step_05_generate_unique_keys.schedule: "*/5 * * * *" # Runs every 5 minutes
-      ofelia.job-exec.step_05_generate_unique_keys.container: "digital-bast-app"
-      ofelia.job-exec.step_05_generate_unique_keys.command: "python main.py --step step_05_generate_unique_keys"
+      # # Generate Unique Keys for all tables
+      # ofelia.job-exec.step_05_generate_unique_keys.schedule: "*/5 * * * *" # Runs every 5 minutes
+      # ofelia.job-exec.step_05_generate_unique_keys.container: "digital-bast-app"
+      # ofelia.job-exec.step_05_generate_unique_keys.command: "python main.py --step step_05_generate_unique_keys"
 
       # ofelia.job-exec.step_05_sync_timesheet_to_gsheet.schedule: "15 */4 * * *" # Runs every 4 hours at minute 15
       # ofelia.job-exec.step_05_sync_timesheet_to_gsheet.container: "digital-bast-app"
