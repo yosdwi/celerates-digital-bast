@@ -27,8 +27,8 @@ app = FastAPI(title="Digital BAST Admin", version="1.0.0")
 
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", secrets.token_urlsafe(32)))
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-# app.mount("/admin/static", StaticFiles(directory="static"), name="static")
+# app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/admin/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # SQLite database for generation plans
