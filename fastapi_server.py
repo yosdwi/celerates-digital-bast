@@ -694,7 +694,7 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     from src.classes.ClsNocoDBProcessor import ClsNocoDBProcessor
 
     # Get tasklist developer data using NocoDB API like other sections
-    table_id = config.NOCODB_TABLES.get("tasklist_iot")
+    table_id = config.NOCODB_TABLES.get("tasklist")
     if not table_id:
         print("DEBUG: No tasklist_iot table configured")
         fauzan_tasks = []
@@ -786,9 +786,27 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
     respon_data = []
 
     try:
-        # Connect to PostgreSQL and query vw_sla_iot_operations
-        conn = psycopg2.connect(config.DB_URL)
-        cursor = conn.cursor()
+        # Connect to PostgreSQL and query vw_sla_iot_operations with retry logic
+        import time
+        max_retries = 3
+        retry_delay = 2
+
+        conn = None
+        for attempt in range(max_retries):
+            try:
+                conn = psycopg2.connect(config.DB_URL)
+                cursor = conn.cursor()
+                break
+            except psycopg2.OperationalError as e:
+                if "recovery mode" in str(e).lower() and attempt < max_retries - 1:
+                    print(f"Database in recovery mode, retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    raise e
+
+        if conn is None:
+            raise Exception("Failed to connect to database after all retries")
 
         # Convert month_name to year-month pattern for filtering
         month_mapping = {
@@ -824,12 +842,15 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
         """, (f"{current_year}/{month_num:02d}/%",))
 
         all_rows = cursor.fetchall()
+        print(f"DEBUG: Query executed successfully. Found {len(all_rows)} total rows for {month_name} {current_year}")
+        print(f"DEBUG: Query pattern was: {current_year}/{month_num:02d}/%")
 
         # Calculate pagination
         items_per_page = 10
         start_idx = (page_number - 1) * items_per_page
         end_idx = start_idx + items_per_page
         rows = all_rows[start_idx:end_idx]
+        print(f"DEBUG: Pagination - showing rows {start_idx+1} to {min(end_idx, len(all_rows))} of {len(all_rows)}")
 
         # Calculate overall statistics from ALL records
         total_respon_achievement_all = 0
@@ -885,6 +906,9 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
 
     except Exception as e:
         print(f"Error querying PostgreSQL vw_sla_iot_operations: {e}")
+        print(f"Error type: {type(e).__name__}")
+        print(f"Month name: {month_name}, Month num: {month_num}, Year: {current_year}")
+        print(f"DB_URL: {config.DB_URL[:50]}...")
         # Fallback to empty data
         respon_data = []
         summary_percentage = 0.0
