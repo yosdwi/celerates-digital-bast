@@ -691,51 +691,32 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     """Generate activities page from Fauzan's Tasklist Developer data"""
 
     from datetime import datetime
-    from src.classes.ClsPostgreSQLProcessor import ClsPostgreSQLProcessor
+    from src.classes.ClsNocoDBProcessor import ClsNocoDBProcessor
 
-    # Convert month name to month number for Unique_Key pattern
-    month_mapping = {
-        'Januari': 1, 'Februari': 2, 'Maret': 3, 'April': 4,
-        'Mei': 5, 'Juni': 6, 'Juli': 7, 'Agustus': 8,
-        'September': 9, 'Oktober': 10, 'November': 11, 'Desember': 12
-    }
+    # Get tasklist developer data using NocoDB API like other sections
+    table_id = config.NOCODB_TABLES.get("tasklist_iot")
+    if not table_id:
+        print("DEBUG: No tasklist_iot table configured")
+        fauzan_tasks = []
+    else:
+        nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
-    month = month_mapping.get(month_name, 1)
-    current_year = datetime.now().year
-    year_month_pattern = f"{current_year}-{month:02d}-"
+        # Use Month filter and Unique_Key ending with _100 for Fauzan's tasks
+        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique_Key,like,%_100%)"
+        response = nocodb.get_records(limit=2000, where=where_clause)
+        records_data = response.get('list', []) if response else []
 
-    # Get tasklist developer data for Fauzan
-    tasklist_table = config.NOCODB_TABLES.get("tasklist")
+        # Convert to consistent format
+        fauzan_tasks = []
+        for record in records_data:
+            fauzan_tasks.append({
+                'Task_List': record.get('Task_List', ''),
+                'Start_Date': record.get('Start_Date', ''),
+                'End_Date': record.get('End_Date', ''),
+                'Requestor': record.get('Requestor', '')
+            })
 
-    # Get Fauzan's tasks using Month filter
-    import psycopg2
-
-    conn = psycopg2.connect(config.DB_URL)
-    cursor = conn.cursor()
-
-    cursor.execute('''
-    SELECT "Task_List", "Start_Date", "End_Date", "Requestor"
-    FROM "pc38r6u1npuq0ul"."Tasklist Developer"
-    WHERE "Unique_Key" LIKE %s
-    AND "Status" = 'Closed'
-    ORDER BY "Start_Date"
-    ''', (f'{year_month_pattern}%_100',))
-
-    task_rows = cursor.fetchall()
-    cursor.close()
-    conn.close()
-
-    # Convert to dictionary format for easier processing
-    fauzan_tasks = []
-    for row in task_rows:
-        fauzan_tasks.append({
-            'Task_List': row[0],
-            'Start_Date': row[1],
-            'End_Date': row[2],
-            'Requestor': row[3]
-        })
-
-    print(f"DEBUG: Found {len(fauzan_tasks)} completed tasks for Fauzan in January 2026")
+    print(f"DEBUG: Found {len(fauzan_tasks)} completed tasks for month {month_name}")
 
     # Process Fauzan's tasklist data
     aktivitas_data = []
