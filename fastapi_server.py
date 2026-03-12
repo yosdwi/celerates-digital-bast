@@ -27,8 +27,8 @@ app = FastAPI(title="Digital BAST Admin", version="1.0.0")
 
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", secrets.token_urlsafe(32)))
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-# app.mount("/admin/static", StaticFiles(directory="static"), name="static")
+# app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/admin/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # SQLite database for generation plans
@@ -702,7 +702,7 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
         nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
         # Use Month filter and Unique_Key ending with _100 for Fauzan's tasks
-        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique_Key,like,%_100%)"
+        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%_100%)"
         response = nocodb.get_records(limit=2000, where=where_clause)
         records_data = response.get('list', []) if response else []
 
@@ -2504,7 +2504,7 @@ async def _get_evidence_html_section(evidence_type: str, month: int, request: Re
     # Use Unique_Key filtering for month-specific records with evidence
     current_year = datetime.now().year
     year_month_pattern = f"{current_year}-{month:02d}-"
-    where_clause = f"(Unique Key,like,{year_month_pattern}%)~and(Evidence Task,notnull)"
+    where_clause = f"(Unique_Key,like,{year_month_pattern}%)~and(Evidence_Task,notnull)"
     response = nocodb.get_records(limit=2000, where=where_clause)
     records = response.get('list', []) if response else []
     
