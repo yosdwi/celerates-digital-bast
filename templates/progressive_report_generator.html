@@ -520,7 +520,7 @@
         async function initializeGeneration() {
             try {
                 // First, get the generation plan
-                const planResponse = await fetch('/admin/api/generate/plan', {
+                const planResponse = await fetch('/api/generate/plan', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
@@ -630,7 +630,7 @@
 
             try {
                 // Generate the section
-                const response = await fetch('/admin/api/generate/section', {
+                const response = await fetch('/api/generate/section', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
@@ -782,7 +782,7 @@
             updateSectionDisplay(section);
 
             try {
-                const response = await fetch('/admin/api/generate/retry', {
+                const response = await fetch('/api/generate/retry', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
