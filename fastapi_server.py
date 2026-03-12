@@ -1547,7 +1547,7 @@ async def _calculate_iot_tasklist_pages(section_type: str, month: int) -> int:
             return total_pages
 
         else:
-            # For "problem" and "aktivitas", use IoT tasklist data
+            # For "problem" and "aktivitas", use IoT tasklist data with section-specific logic
             table_id = config.NOCODB_TABLES.get("tasklist_iot")
             if not table_id:
                 return 0
@@ -1562,8 +1562,14 @@ async def _calculate_iot_tasklist_pages(section_type: str, month: int) -> int:
             }
             month_name = month_names.get(month, 'Januari')
 
-            # Use Month filter for IoT tasklist data
-            where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
+            # Apply same filtering logic as the actual generation functions
+            if section_type == "aktivitas":
+                # Same filter as _generate_iot_aktivitas_page - Fauzan's tasks with _100
+                where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique_Key,like,%_100%)"
+            else:  # problem section
+                # Use general IoT tasklist data filter for problem section
+                where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
+
             response = nocodb.get_records(limit=2000, where=where_clause)
             records = response.get('list', []) if response else []
 
