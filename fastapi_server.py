@@ -702,7 +702,7 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
         nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
         # Use Month filter and Unique_Key ending with _100 for Fauzan's tasks
-        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%100%)"
+        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%100)"
         response = nocodb.get_records(limit=2000, where=where_clause)
         records_data = response.get('list', []) if response else []
 
@@ -1529,26 +1529,41 @@ async def _calculate_iot_tasklist_pages(section_type: str, month: int) -> int:
             return total_pages
 
         else:
-            # For "problem" and "aktivitas", use IoT tasklist data with section-specific logic
-            table_id = config.NOCODB_TABLES.get("tasklist_iot")
-            if not table_id:
-                return 0
-
-            nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
-
-            # Convert month to Indonesian name
-            month_names = {
-                1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
-                5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
-                9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
-            }
-            month_name = month_names.get(month, 'Januari')
+            
 
             # Apply same filtering logic as the actual generation functions
             if section_type == "aktivitas":
+                # For "problem" and "aktivitas", use IoT tasklist data with section-specific logic
+                table_id = config.NOCODB_TABLES.get("tasklist")
+                if not table_id:
+                    return 0
+
+                nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
+
+                # Convert month to Indonesian name
+                month_names = {
+                    1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+                    5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+                    9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+                }
+                month_name = month_names.get(month, 'Januari')
                 # Same filter as _generate_iot_aktivitas_page - Fauzan's tasks with _100
-                where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%_100)"
+                where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%100)"
             else:  # problem section
+                # For "problem" and "aktivitas", use IoT tasklist data with section-specific logic
+                table_id = config.NOCODB_TABLES.get("tasklist_iot")
+                if not table_id:
+                    return 0
+
+                nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
+
+                # Convert month to Indonesian name
+                month_names = {
+                    1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+                    5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+                    9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+                }
+                month_name = month_names.get(month, 'Januari')
                 # Use general IoT tasklist data filter for problem section
                 where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
 
