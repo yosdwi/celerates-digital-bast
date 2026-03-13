@@ -702,72 +702,64 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
         nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
         # Use Month filter and Unique_Key ending with _100 for Fauzan's tasks
-        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%_100%)"
+        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%100%)"
         response = nocodb.get_records(limit=2000, where=where_clause)
         records_data = response.get('list', []) if response else []
 
-        # Convert to consistent format
-        fauzan_tasks = []
-        for record in records_data:
-            fauzan_tasks.append({
-                'Task List': record.get('Task List', ''),
-                'Start Date': record.get('Start Date', ''),
-                'End Date': record.get('End Date', ''),
-                'Requestor': record.get('Requestor', '')
-            })
+    #     # Convert to consistent format
+    #     fauzan_tasks = []
+    #     for record in records_data:
+    #         fauzan_tasks.append({
+    #             'Task List': record.get('Task List', ''),
+    #             'Start Date': record.get('Start Date', ''),
+    #             'End Date': record.get('End Date', ''),
+    #             'Requestor': record.get('Requestor', '')
+    #         })
 
-    print(f"DEBUG: Found {len(fauzan_tasks)} completed tasks for month {month_name}")
+    # print(f"DEBUG: Found {len(fauzan_tasks)} completed tasks for month {month_name}")
 
-    # Process Fauzan's tasklist data
+    # # Process Fauzan's tasklist data
     aktivitas_data = []
 
-    if fauzan_tasks:
-        print(f"DEBUG: Sample task record: {fauzan_tasks[0] if fauzan_tasks else 'None'}")
+    for i, task in enumerate(fauzan_tasks, 1):
+        # Get task fields (using correct column names)
+        task_list = task.get('Task List', '')
+        start_date = task.get('Start Date', '')
+        end_date = task.get('End Date', '')
+        requestor = task.get('Requestor', 'Bagas Eko Prasetyo')  # Default PIC PAMA
 
-        for i, task in enumerate(fauzan_tasks, 1):
-            # Get task fields (using correct column names)
-            task_list = task.get('Task List', '')
-            start_date = task.get('Start Date', '')
-            end_date = task.get('End Date', '')
-            requestor = task.get('Requestor', 'Bagas Eko Prasetyo')  # Default PIC PAMA
+        # Skip if no task description
+        if not task_list or task_list.strip() in ['', '-', 'N/A']:
+            continue
 
-            # Skip if no task description
-            if not task_list or task_list.strip() in ['', '-', 'N/A']:
-                continue
+        # Format dates
+        formatted_start = start_date
+        formatted_end = end_date
+        if start_date:
+            try:
+                if isinstance(start_date, str):
+                    parsed_date = datetime.strptime(start_date, '%Y-%m-%d')
+                    formatted_start = parsed_date.strftime('%d %B %Y')
+            except:
+                pass
 
-            # Format dates
-            formatted_start = start_date
-            formatted_end = end_date
-            if start_date:
-                try:
-                    if isinstance(start_date, str):
-                        parsed_date = datetime.strptime(start_date, '%Y-%m-%d')
-                        formatted_start = parsed_date.strftime('%d %B %Y')
-                except:
-                    pass
+        if end_date:
+            try:
+                if isinstance(end_date, str):
+                    parsed_date = datetime.strptime(end_date, '%Y-%m-%d')
+                    formatted_end = parsed_date.strftime('%d %B %Y')
+            except:
+                pass
 
-            if end_date:
-                try:
-                    if isinstance(end_date, str):
-                        parsed_date = datetime.strptime(end_date, '%Y-%m-%d')
-                        formatted_end = parsed_date.strftime('%d %B %Y')
-                except:
-                    pass
-
-            aktivitas_data.append({
-                "no": i,
-                "detail_aktivitas": task_list,
-                "tanggal_request": formatted_start,
-                "tanggal_penyelesaian": formatted_end,
-                "lead_time": "8 Jam",  # Hardcoded as requested
-                "requestor_pic": requestor,
-                "engineer_manage": "Muhammad Fauzan Acyuto"
-            })
-
-        print(f"DEBUG: Generated {len(aktivitas_data)} activities from Fauzan's tasklist")
-    else:
-        print("DEBUG: No completed tasks found for Fauzan in February 2026")
-        aktivitas_data = []
+        aktivitas_data.append({
+            "no": i,
+            "detail_aktivitas": task_list,
+            "tanggal_request": formatted_start,
+            "tanggal_penyelesaian": formatted_end,
+            "lead_time": "8 Jam",  # Hardcoded as requested
+            "requestor_pic": requestor,
+            "engineer_manage": "Muhammad Fauzan Acyuto"
+        })
 
     # Render template
     template = templates.get_template('tasklistiotoperation/detail_aktivitas_pihak_kedua.html')
@@ -1568,7 +1560,7 @@ async def _calculate_iot_tasklist_pages(section_type: str, month: int) -> int:
             # Apply same filtering logic as the actual generation functions
             if section_type == "aktivitas":
                 # Same filter as _generate_iot_aktivitas_page - Fauzan's tasks with _100
-                where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique_Key,like,%_100%)"
+                where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%_100)"
             else:  # problem section
                 # Use general IoT tasklist data filter for problem section
                 where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)"
