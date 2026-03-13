@@ -846,7 +846,7 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
         print(f"DEBUG: Query pattern was: {current_year}/{month_num:02d}/%")
 
         # Calculate pagination
-        items_per_page = 10
+        items_per_page = 20
         start_idx = (page_number - 1) * items_per_page
         end_idx = start_idx + items_per_page
         rows = all_rows[start_idx:end_idx]
