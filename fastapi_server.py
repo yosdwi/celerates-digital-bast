@@ -697,7 +697,7 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     table_id = config.NOCODB_TABLES.get("tasklist")
     if not table_id:
         print("DEBUG: No tasklist_iot table configured")
-        fauzan_tasks = []
+        aktivitas_data = []
     else:
         nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
@@ -706,60 +706,47 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
         response = nocodb.get_records(limit=2000, where=where_clause)
         records_data = response.get('list', []) if response else []
 
-    #     # Convert to consistent format
-    #     fauzan_tasks = []
-    #     for record in records_data:
-    #         fauzan_tasks.append({
-    #             'Task List': record.get('Task List', ''),
-    #             'Start Date': record.get('Start Date', ''),
-    #             'End Date': record.get('End Date', ''),
-    #             'Requestor': record.get('Requestor', '')
-    #         })
+        aktivitas_data = []
 
-    # print(f"DEBUG: Found {len(fauzan_tasks)} completed tasks for month {month_name}")
+        for i, task in enumerate(fauzan_tasks, 1):
+            # Get task fields (using correct column names)
+            task_list = task.get('Task List', '')
+            start_date = task.get('Start Date', '')
+            end_date = task.get('End Date', '')
+            requestor = task.get('Requestor', 'Bagas Eko Prasetyo')  # Default PIC PAMA
 
-    # # Process Fauzan's tasklist data
-    aktivitas_data = []
+            # Skip if no task description
+            if not task_list or task_list.strip() in ['', '-', 'N/A']:
+                continue
 
-    for i, task in enumerate(fauzan_tasks, 1):
-        # Get task fields (using correct column names)
-        task_list = task.get('Task List', '')
-        start_date = task.get('Start Date', '')
-        end_date = task.get('End Date', '')
-        requestor = task.get('Requestor', 'Bagas Eko Prasetyo')  # Default PIC PAMA
+            # Format dates
+            formatted_start = start_date
+            formatted_end = end_date
+            if start_date:
+                try:
+                    if isinstance(start_date, str):
+                        parsed_date = datetime.strptime(start_date, '%Y-%m-%d')
+                        formatted_start = parsed_date.strftime('%d %B %Y')
+                except:
+                    pass
 
-        # Skip if no task description
-        if not task_list or task_list.strip() in ['', '-', 'N/A']:
-            continue
+            if end_date:
+                try:
+                    if isinstance(end_date, str):
+                        parsed_date = datetime.strptime(end_date, '%Y-%m-%d')
+                        formatted_end = parsed_date.strftime('%d %B %Y')
+                except:
+                    pass
 
-        # Format dates
-        formatted_start = start_date
-        formatted_end = end_date
-        if start_date:
-            try:
-                if isinstance(start_date, str):
-                    parsed_date = datetime.strptime(start_date, '%Y-%m-%d')
-                    formatted_start = parsed_date.strftime('%d %B %Y')
-            except:
-                pass
-
-        if end_date:
-            try:
-                if isinstance(end_date, str):
-                    parsed_date = datetime.strptime(end_date, '%Y-%m-%d')
-                    formatted_end = parsed_date.strftime('%d %B %Y')
-            except:
-                pass
-
-        aktivitas_data.append({
-            "no": i,
-            "detail_aktivitas": task_list,
-            "tanggal_request": formatted_start,
-            "tanggal_penyelesaian": formatted_end,
-            "lead_time": "8 Jam",  # Hardcoded as requested
-            "requestor_pic": requestor,
-            "engineer_manage": "Muhammad Fauzan Acyuto"
-        })
+            aktivitas_data.append({
+                "no": i,
+                "detail_aktivitas": task_list,
+                "tanggal_request": formatted_start,
+                "tanggal_penyelesaian": formatted_end,
+                "lead_time": "8 Jam",  # Hardcoded as requested
+                "requestor_pic": requestor,
+                "engineer_manage": "Muhammad Fauzan Acyuto"
+            })
 
     # Render template
     template = templates.get_template('tasklistiotoperation/detail_aktivitas_pihak_kedua.html')
@@ -1537,7 +1524,7 @@ async def _calculate_iot_tasklist_pages(section_type: str, month: int) -> int:
                 return 0
 
             # Calculate pages needed (max 10 items per page)
-            items_per_page = 10
+            items_per_page = 20
             total_pages = (count + items_per_page - 1) // items_per_page
             return total_pages
 
@@ -1572,7 +1559,7 @@ async def _calculate_iot_tasklist_pages(section_type: str, month: int) -> int:
                 return 0
 
             # Calculate pages needed (max 10 items per page)
-            items_per_page = 10
+            items_per_page = 20
             total_items = len(records)
             total_pages = (total_items + items_per_page - 1) // items_per_page
 

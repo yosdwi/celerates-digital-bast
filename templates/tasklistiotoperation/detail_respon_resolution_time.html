@@ -16,7 +16,6 @@
             margin-bottom: 20px;
         }
         .iot-respon-section .table-container {
-            border: 2px solid #000;
             width: 100%;
             margin-bottom: 20px;
         }
@@ -24,6 +23,7 @@
             width: 100%;
             border-collapse: collapse;
             font-size: 9px;
+            border: 2px solid #000;
         }
         .iot-respon-section th {
             background-color: #9BB5D6;
@@ -127,9 +127,8 @@
                 </tr>
                 {% endfor %}
                 <tr class="summary-row">
-                    <td colspan="16" class="left-align">Rata Rata Waktu Respon dan Waktu Penyelesaian</td>
+                    <td colspan="17" class="left-align">Rata Rata Waktu Respon dan Waktu Penyelesaian</td>
                     <td class="performance-col">{{ summary_percentage }}%</td>
-                    <td class="performance-col"></td>
                 </tr>
             </tbody>
         </table>
