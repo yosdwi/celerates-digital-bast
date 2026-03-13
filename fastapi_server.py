@@ -1518,6 +1518,9 @@ async def _calculate_tasklist_pages(section_type: str, month: int) -> int:
 async def _calculate_iot_tasklist_pages(section_type: str, month: int) -> int:
     """Calculate how many pages needed for IoT task list type - based on data availability"""
     try:
+        if section_type == "problem":
+            return 1
+            
         if section_type == "respon":
             # Use PostgreSQL view for respon section
             import psycopg2
