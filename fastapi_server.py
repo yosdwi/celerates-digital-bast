@@ -710,9 +710,9 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
         fauzan_tasks = []
         for record in records_data:
             fauzan_tasks.append({
-                'Task_List': record.get('Task_List', ''),
-                'Start_Date': record.get('Start_Date', ''),
-                'End_Date': record.get('End_Date', ''),
+                'Task List': record.get('Task List', ''),
+                'Start Date': record.get('Start Date', ''),
+                'End Date': record.get('End Date', ''),
                 'Requestor': record.get('Requestor', '')
             })
 
@@ -726,9 +726,9 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
 
         for i, task in enumerate(fauzan_tasks, 1):
             # Get task fields (using correct column names)
-            task_list = task.get('Task_List', '')
-            start_date = task.get('Start_Date', '')
-            end_date = task.get('End_Date', '')
+            task_list = task.get('Task List', '')
+            start_date = task.get('Start Date', '')
+            end_date = task.get('End Date', '')
             requestor = task.get('Requestor', 'Bagas Eko Prasetyo')  # Default PIC PAMA
 
             # Skip if no task description
@@ -2009,7 +2009,7 @@ async def _get_iot_tasklist_html_content(month: int, section_type: str, request:
                 records.append(record)
 
         # Apply pagination to records
-        items_per_page = 10
+        items_per_page = 20
         start_idx = (page_number - 1) * items_per_page
         end_idx = start_idx + items_per_page
         paginated_records = records[start_idx:end_idx]
