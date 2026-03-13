@@ -708,7 +708,7 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
 
         aktivitas_data = []
 
-        for i, task in enumerate(fauzan_tasks, 1):
+        for i, task in enumerate(records_data, 1):
             # Get task fields (using correct column names)
             task_list = task.get('Task List', '')
             start_date = task.get('Start Date', '')
