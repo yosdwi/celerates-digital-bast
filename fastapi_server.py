@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, FileResponse, Response, RedirectResp
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from src import config
@@ -26,6 +27,7 @@ from src.classes.ClsNocoDBProcessor import ClsNocoDBProcessor
 app = FastAPI(title="Digital BAST Admin", version="1.0.0")
 
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", secrets.token_urlsafe(32)))
+app.add_middleware(GZipMiddleware, minimum_size=1000)  # Compress responses > 1KB
 
 # app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/admin/static", StaticFiles(directory="static"), name="static")
@@ -543,7 +545,7 @@ async def _generate_dev_kualitas_data(request: Request, records: list, month_nam
         summary_pencapaian = str(avg_pencapaian)
 
     # Render template as string instead of TemplateResponse for progressive generation
-    template = templates.get_template('tasklistdeveloper/detail_aktivitas_kualitas_kode.html')
+    template = _get_template_cached('tasklistdeveloper/detail_aktivitas_kualitas_kode.html')
     return template.render({
         "request": request,
         "kualitas_kode_data": kualitas_data,
@@ -584,7 +586,7 @@ async def _generate_dev_rilis_data(request: Request, records: list, month_name: 
     avg_pencapaian = total_pencapaian // len(valid_pencapaian) if valid_pencapaian else 0
 
     # Render template as string instead of TemplateResponse for progressive generation
-    template = templates.get_template('tasklistdeveloper/detail_aktivitas_waktu_rilis.html')
+    template = _get_template_cached('tasklistdeveloper/detail_aktivitas_waktu_rilis.html')
     return template.render({
         "request": request,
         "waktu_rilis_data": rilis_data,
@@ -635,7 +637,7 @@ async def _generate_dev_support_data(request: Request, records: list, month_name
     avg_pencapaian = total_pencapaian // len(valid_pencapaian) if valid_pencapaian else 0
 
     # Render template as string instead of TemplateResponse for progressive generation
-    template = templates.get_template('tasklistdeveloper/detail_aktivitas_dukungan_support.html')
+    template = _get_template_cached('tasklistdeveloper/detail_aktivitas_dukungan_support.html')
     return template.render({
         "request": request,
         "dukungan_support_data": support_data,
@@ -680,7 +682,7 @@ async def _generate_iot_problem_page(request: Request, records: list, month_name
     ]
 
     # Render template as string instead of TemplateResponse for progressive generation
-    template = templates.get_template('tasklistiotoperation/detail_problem_pihak_kedua.html')
+    template = _get_template_cached('tasklistiotoperation/detail_problem_pihak_kedua.html')
     return template.render({
         "request": request,
         "problem_data": problem_data,
@@ -749,7 +751,7 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
             })
 
     # Render template
-    template = templates.get_template('tasklistiotoperation/detail_aktivitas_pihak_kedua.html')
+    template = _get_template_cached('tasklistiotoperation/detail_aktivitas_pihak_kedua.html')
     return template.render({
         "request": request,
         "aktivitas_data": aktivitas_data,
@@ -762,6 +764,20 @@ _iot_respon_cache = {}
 
 # Cache for storing employee data to avoid repeated NocoDB queries
 _employee_cache = {}
+
+# Template skeleton cache for faster rendering
+_template_skeleton_cache = {}
+
+def _get_template_cached(template_name: str):
+    """Get cached template or parse and cache if new"""
+    if template_name not in _template_skeleton_cache:
+        template = templates.get_template(template_name)
+        _template_skeleton_cache[template_name] = template
+        print(f"DEBUG: Cached template {template_name}")
+    else:
+        template = _template_skeleton_cache[template_name]
+        print(f"DEBUG: Using cached template {template_name}")
+    return template
 
 async def _get_employee_data_cached():
     """Get all employee data with caching"""
@@ -1010,8 +1026,8 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
 
         print(f"DEBUG: Summary percentage for page {page_number}/{total_pages}: {summary_percentage}")
 
-        # Render template
-        template = templates.get_template('tasklistiotoperation/detail_respon_resolution_time.html')
+        # Render template using cache for faster performance
+        template = _get_template_cached('tasklistiotoperation/detail_respon_resolution_time.html')
         return template.render({
             "request": request,
             "respon_data": respon_data,
@@ -1022,7 +1038,7 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
     except Exception as e:
         print(f"Error generating IoT respon page: {e}")
         # Fallback to empty data
-        template = templates.get_template('tasklistiotoperation/detail_respon_resolution_time.html')
+        template = _get_template_cached('tasklistiotoperation/detail_respon_resolution_time.html')
         return template.render({
             "request": request,
             "respon_data": [],
@@ -3202,7 +3218,7 @@ async def test_response_resolution_time(request: Request):
         })
 
     # Render the response resolution time template
-    template = templates.get_template('tasklistiotoperation/detail_respon_resolution_time.html')
+    template = _get_template_cached('tasklistiotoperation/detail_respon_resolution_time.html')
     response_content = template.render({
         "request": request,
         "respon_data": respon_data,
@@ -3229,8 +3245,25 @@ async def startup_event():
     try:
         init_db()
         print("✅ Database initialized successfully")
+
+        # Pre-warm caches for faster response times
+        print("🔥 Pre-warming caches...")
+
+        # Pre-load employee data
+        await _get_employee_data_cached()
+
+        # Pre-load current month IoT respon data
+        from datetime import datetime
+        current_month = datetime.now().strftime('%B')
+        await _get_iot_respon_data_cached(current_month)
+
+        print("✅ Cache pre-warming completed")
+
     except Exception as e:
-        print(f"❌ Database initialization failed: {e}")
+        print(f"❌ Startup initialization failed: {e}")
+        # Don't fail startup for cache errors, just log them
+        if "Database initialization failed" in str(e):
+            raise
 
 if __name__ == "__main__":
     import uvicorn

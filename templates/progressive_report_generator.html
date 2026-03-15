@@ -511,8 +511,7 @@
             isPaused: false,
             completedSections: [],
             // Add timeout management for clean pause/resume
-            currentTimeout: null,
-            activeBatches: new Set()  // Track active batch processes
+            currentTimeout: null
         };
 
         // Initialize page
@@ -614,45 +613,31 @@
             await processNextSection();
         }
 
-        // NEW: Parallel batch processing (4x faster!)
+        // Sequential processing (stable, reliable)
         async function processNextSection() {
             if (!generationState.isGenerating || generationState.isPaused) return;
 
-            // Find all pending sections for batch processing
-            const pendingSections = generationState.sections.filter(s => s.status === 'pending');
+            // Find next pending section
+            const nextSection = generationState.sections.find(s => s.status === 'pending');
 
-            if (pendingSections.length === 0) {
+            if (!nextSection) {
                 // All sections completed or failed
                 completeGeneration();
                 return;
             }
 
-            // Process up to 4 sections in parallel (configurable batch size)
-            const batchSize = Math.min(4, pendingSections.length);
-            const batch = pendingSections.slice(0, batchSize);
-
-            // Mark all sections in batch as loading
-            batch.forEach(section => {
-                section.status = 'loading';
-                updateSectionDisplay(section);
-            });
+            // Process single section
+            nextSection.status = 'loading';
+            updateSectionDisplay(nextSection);
             updateProgress();
 
-            // Process all sections in batch concurrently with individual error handling
-            const batchId = Date.now() + Math.random(); // Unique batch identifier
-            generationState.activeBatches.add(batchId);
+            await processSingleSectionSafely(nextSection);
 
-            await Promise.allSettled(
-                batch.map(section => processSingleSectionSafely(section))
-            );
-
-            generationState.activeBatches.delete(batchId);
-
-            // Update progress after batch completion
+            // Update progress after section completion
             updateProgress();
             updateLocalStorage();
 
-            // Continue with next batch if more pending sections exist
+            // Continue with next section if more pending sections exist
             const stillPending = generationState.sections.filter(s => s.status === 'pending');
             if (stillPending.length > 0 && !generationState.isPaused) {
                 // Store timeout ID for clean cancellation
@@ -660,13 +645,13 @@
                     if (!generationState.isPaused && generationState.isGenerating) {
                         processNextSection();
                     }
-                }, 500);
+                }, 200); // Shorter delay for better responsiveness
             } else if (stillPending.length === 0) {
                 completeGeneration();
             }
         }
 
-        // Extract single section processing for reuse in parallel execution
+        // Single section processing with error handling
         async function processSingleSectionSafely(section) {
             try {
                 const response = await fetch('/api/generate/section', {
@@ -893,13 +878,12 @@
                 generationState.currentTimeout = null;
             }
 
-            // Note: We don't cancel active batches as they should complete naturally
-            // This allows for clean pause without interrupting ongoing requests
+            // Sequential processing - current section will complete before pausing
 
             document.getElementById('pause-generation-btn').style.display = 'none';
             document.getElementById('start-generation-btn').style.display = 'block';
 
-            console.log(`Generation paused. ${generationState.activeBatches.size} active batches will complete before stopping.`);
+            console.log('Generation paused. Current section will complete before stopping.');
         }
 
         function completeGeneration() {
@@ -912,8 +896,7 @@
                 generationState.currentTimeout = null;
             }
 
-            // Clear active batches tracking
-            generationState.activeBatches.clear();
+            // Sequential processing completed
 
             document.getElementById('pause-generation-btn').style.display = 'none';
             document.getElementById('proceed-to-editor-btn').style.display = 'block';
