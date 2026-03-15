@@ -633,7 +633,7 @@
 
             await processSingleSectionSafely(nextSection);
 
-            // Update progress after section completion
+            // processSingleSectionSafely already updates display, just update progress and storage
             updateProgress();
             updateLocalStorage();
 
@@ -669,6 +669,7 @@
 
                 if (result.success) {
                     // Section generated successfully
+                    console.log(`DEBUG: Section ${section.id} generated successfully`);
                     section.status = 'completed';
                     generationState.completedSections.push(result.section);
 
@@ -678,13 +679,15 @@
                     // Stream section to server session (avoid localStorage overflow)
                     await streamSectionToSession(result.section);
 
+                    // Update display immediately after success
+                    updateSectionDisplay(section);
+
                 } else {
                     // Section failed
                     section.status = 'failed';
                     section.error = result.error;
+                    updateSectionDisplay(section);
                 }
-
-                updateSectionDisplay(section);
 
             } catch (error) {
                 section.status = 'failed';
@@ -753,6 +756,7 @@
         }
 
         function updateSectionDisplay(section) {
+            console.log(`DEBUG: Updating section ${section.id} to status: ${section.status}`);
             const sectionElement = document.getElementById(`section-${section.id}`);
             if (sectionElement) {
                 // Update classes
@@ -852,12 +856,13 @@
                     addSectionToPreview(result.section);
                     // Stream to server session
                     await streamSectionToSession(result.section);
+                    updateSectionDisplay(section);
                 } else {
                     section.status = 'failed';
                     section.error = result.error;
+                    updateSectionDisplay(section);
                 }
 
-                updateSectionDisplay(section);
                 updateProgress();
                 updateLocalStorage();
 
