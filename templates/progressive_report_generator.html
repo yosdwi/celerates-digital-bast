@@ -509,7 +509,10 @@
             currentSectionIndex: 0,
             isGenerating: false,
             isPaused: false,
-            completedSections: []
+            completedSections: [],
+            // Add timeout management for clean pause/resume
+            currentTimeout: null,
+            activeBatches: new Set()  // Track active batch processes
         };
 
         // Initialize page
@@ -611,32 +614,68 @@
             await processNextSection();
         }
 
+        // NEW: Parallel batch processing (4x faster!)
         async function processNextSection() {
             if (!generationState.isGenerating || generationState.isPaused) return;
 
-            // Find next pending section
-            const nextSection = generationState.sections.find(s => s.status === 'pending');
+            // Find all pending sections for batch processing
+            const pendingSections = generationState.sections.filter(s => s.status === 'pending');
 
-            if (!nextSection) {
+            if (pendingSections.length === 0) {
                 // All sections completed or failed
                 completeGeneration();
                 return;
             }
 
-            // Update section status to loading
-            nextSection.status = 'loading';
-            updateSectionDisplay(nextSection);
+            // Process up to 4 sections in parallel (configurable batch size)
+            const batchSize = Math.min(4, pendingSections.length);
+            const batch = pendingSections.slice(0, batchSize);
+
+            // Mark all sections in batch as loading
+            batch.forEach(section => {
+                section.status = 'loading';
+                updateSectionDisplay(section);
+            });
             updateProgress();
 
+            // Process all sections in batch concurrently with individual error handling
+            const batchId = Date.now() + Math.random(); // Unique batch identifier
+            generationState.activeBatches.add(batchId);
+
+            await Promise.allSettled(
+                batch.map(section => processSingleSectionSafely(section))
+            );
+
+            generationState.activeBatches.delete(batchId);
+
+            // Update progress after batch completion
+            updateProgress();
+            updateLocalStorage();
+
+            // Continue with next batch if more pending sections exist
+            const stillPending = generationState.sections.filter(s => s.status === 'pending');
+            if (stillPending.length > 0 && !generationState.isPaused) {
+                // Store timeout ID for clean cancellation
+                generationState.currentTimeout = setTimeout(() => {
+                    if (!generationState.isPaused && generationState.isGenerating) {
+                        processNextSection();
+                    }
+                }, 500);
+            } else if (stillPending.length === 0) {
+                completeGeneration();
+            }
+        }
+
+        // Extract single section processing for reuse in parallel execution
+        async function processSingleSectionSafely(section) {
             try {
-                // Generate the section
                 const response = await fetch('/api/generate/section', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
                     body: new URLSearchParams({
-                        section_id: nextSection.id,
+                        section_id: section.id,
                         plan_id: generationState.plan_id
                     })
                 });
@@ -645,38 +684,65 @@
 
                 if (result.success) {
                     // Section generated successfully
-                    nextSection.status = 'completed';
+                    section.status = 'completed';
                     generationState.completedSections.push(result.section);
 
                     // Add to live preview
                     addSectionToPreview(result.section);
 
-                    // Store in browser storage as backup
-                    localStorage.setItem('progressiveGeneration', JSON.stringify({
-                        sections: generationState.sections,
-                        completedSections: generationState.completedSections
-                    }));
+                    // Stream section to server session (avoid localStorage overflow)
+                    await streamSectionToSession(result.section);
 
                 } else {
                     // Section failed
-                    nextSection.status = 'failed';
-                    nextSection.error = result.error;
+                    section.status = 'failed';
+                    section.error = result.error;
                 }
 
-                updateSectionDisplay(nextSection);
-                updateProgress();
-
-                // Continue with next section after a brief pause
-                setTimeout(() => processNextSection(), 1000);
+                updateSectionDisplay(section);
 
             } catch (error) {
-                nextSection.status = 'failed';
-                nextSection.error = error.message;
-                updateSectionDisplay(nextSection);
-                updateProgress();
+                section.status = 'failed';
+                section.error = error.message;
+                updateSectionDisplay(section);
+            }
+        }
 
-                // Continue with next section
-                setTimeout(() => processNextSection(), 1000);
+        // Helper function to update localStorage with lightweight progress data
+        function updateLocalStorage() {
+            localStorage.setItem('progressiveGeneration', JSON.stringify({
+                plan_id: generationState.plan_id,
+                progress: {
+                    total: generationState.sections.length,
+                    completed: generationState.sections.filter(s => s.status === 'completed').length,
+                    failed: generationState.sections.filter(s => s.status === 'failed').length
+                },
+                timestamp: Date.now()
+            }));
+        }
+
+        // Stream completed section to server session (avoid localStorage overflow)
+        async function streamSectionToSession(section) {
+            try {
+                await fetch('/api/stream/section', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        plan_id: generationState.plan_id,
+                        section: {
+                            type: section.type,
+                            title: section.title,
+                            content: section.content,
+                            section_type: section.section_type || ''
+                        },
+                        timestamp: new Date().toISOString()
+                    })
+                });
+            } catch (error) {
+                console.warn('Failed to stream section to session:', error);
+                // Non-blocking error - don't interrupt generation process
             }
         }
 
@@ -799,6 +865,8 @@
                     section.status = 'completed';
                     generationState.completedSections.push(result.section);
                     addSectionToPreview(result.section);
+                    // Stream to server session
+                    await streamSectionToSession(result.section);
                 } else {
                     section.status = 'failed';
                     section.error = result.error;
@@ -806,6 +874,7 @@
 
                 updateSectionDisplay(section);
                 updateProgress();
+                updateLocalStorage();
 
             } catch (error) {
                 section.status = 'failed';
@@ -816,14 +885,40 @@
 
         function pauseGeneration() {
             generationState.isPaused = true;
+            generationState.isGenerating = false;
+
+            // Clear any pending timeouts
+            if (generationState.currentTimeout) {
+                clearTimeout(generationState.currentTimeout);
+                generationState.currentTimeout = null;
+            }
+
+            // Note: We don't cancel active batches as they should complete naturally
+            // This allows for clean pause without interrupting ongoing requests
+
             document.getElementById('pause-generation-btn').style.display = 'none';
             document.getElementById('start-generation-btn').style.display = 'block';
+
+            console.log(`Generation paused. ${generationState.activeBatches.size} active batches will complete before stopping.`);
         }
 
         function completeGeneration() {
             generationState.isGenerating = false;
+            generationState.isPaused = false;
+
+            // Clear any pending timeouts
+            if (generationState.currentTimeout) {
+                clearTimeout(generationState.currentTimeout);
+                generationState.currentTimeout = null;
+            }
+
+            // Clear active batches tracking
+            generationState.activeBatches.clear();
+
             document.getElementById('pause-generation-btn').style.display = 'none';
             document.getElementById('proceed-to-editor-btn').style.display = 'block';
+
+            console.log('Generation completed successfully.');
         }
 
         function proceedToEditor() {

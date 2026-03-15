@@ -1871,6 +1871,35 @@ async def generate_section(
     """Generate a specific section by ID"""
     return await _generate_section_logic(request, section_id, plan_id)
 
+@app.post("/api/stream/section")
+async def stream_section_to_session(request: Request):
+    """Store completed section in server session (avoid localStorage overflow)"""
+    try:
+        data = await request.json()
+        plan_id = data["plan_id"]
+        section = data["section"]
+
+        # Initialize session storage for report sections
+        if "report_sections" not in request.session:
+            request.session["report_sections"] = {}
+
+        if plan_id not in request.session["report_sections"]:
+            request.session["report_sections"][plan_id] = []
+
+        # Store section without overwhelming localStorage
+        request.session["report_sections"][plan_id].append({
+            "type": section["type"],
+            "title": section["title"],
+            "content": section["content"],
+            "timestamp": data.get("timestamp", "")
+        })
+
+        return {"success": True, "stored_count": len(request.session["report_sections"][plan_id])}
+
+    except Exception as e:
+        print(f"Error streaming section to session: {e}")
+        return {"success": False, "error": str(e)}
+
 
 @app.post("/api/generate/retry")
 async def retry_section(
