@@ -757,19 +757,113 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     })
 
 
-async def _generate_iot_respon_page(request: Request, records: list, month_name: str, page_number: int = 1, total_pages: int = 1):
-    """Generate response time page from PostgreSQL vw_sla_iot_operations view with pagination"""
+# Cache for storing IoT respon data to avoid repeated database queries
+_iot_respon_cache = {}
+
+# Cache for storing employee data to avoid repeated NocoDB queries
+_employee_cache = {}
+
+async def _get_employee_data_cached():
+    """Get all employee data with caching"""
+    cache_key = "all_employees"
+
+    # Return cached data if available
+    if cache_key in _employee_cache:
+        print(f"DEBUG: Using cached employee data")
+        return _employee_cache[cache_key]
+
+    print(f"DEBUG: Fetching fresh employee data")
+
+    try:
+        employee_table = config.NOCODB_TABLES.get("employee_data")
+        if not employee_table:
+            return {}
+
+        nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
+        all_employees = nocodb_employee.get_all_employees()
+
+        # Cache the employee data
+        _employee_cache[cache_key] = all_employees
+        print(f"DEBUG: Cached {len(all_employees)} employee records")
+
+        return all_employees
+    except Exception as e:
+        print(f"Error fetching employee data: {e}")
+        return {}
+
+def _filter_employees_by_type(all_employees: dict, report_type: str):
+    """Filter employees based on report type without additional database queries"""
+    employee_mapping = {}
+
+    if report_type == "iotoperation":
+        # For IoT Operations, include specific NRPs and IoT Operations role
+        for name, info in all_employees.items():
+            employee_role = info.get('role', '').strip()
+            employee_nrp = info.get('nrp', '').strip()
+            # Include if they have IoT Operations role OR are specific NRPs
+            if (employee_role == "IoT Operations" or
+                employee_nrp in ["JIMT24011", "JIMT24012", "JIMT24001"]):
+                employee_mapping[name] = info
+    elif report_type == "developer":
+        # For Developer, exclude NRPs that are already in IoT Operations
+        excluded_nrps = ["JIMT24011", "JIMT24012", "JIMT24001"]
+        for name, info in all_employees.items():
+            employee_role = info.get('role', '').strip()
+            employee_nrp = info.get('nrp', '').strip()
+            if employee_role == "Developer" and employee_nrp not in excluded_nrps:
+                employee_mapping[name] = info
+    else:
+        employee_mapping = all_employees.copy()
+
+    return employee_mapping
+
+async def _get_employee_data_cached():
+    """Get all employee data with caching"""
+    cache_key = "all_employees"
+
+    # Return cached data if available
+    if cache_key in _employee_cache:
+        print(f"DEBUG: Using cached employee data")
+        return _employee_cache[cache_key]
+
+    print(f"DEBUG: Fetching fresh employee data")
+
+    try:
+        employee_table = config.NOCODB_TABLES.get("employee_data")
+        if not employee_table:
+            return {}
+
+        nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
+        all_employees = nocodb_employee.get_all_employees()
+
+        # Cache the employee data
+        _employee_cache[cache_key] = all_employees
+        print(f"DEBUG: Cached {len(all_employees)} employee records")
+
+        return all_employees
+    except Exception as e:
+        print(f"Error fetching employee data: {e}")
+        return {}
+
+async def _get_iot_respon_data_cached(month_name: str):
+    """Get all IoT respon data for the month with caching"""
     import psycopg2
     from datetime import datetime
 
-    respon_data = []
+    cache_key = f"iot_respon_{month_name}_{datetime.now().year}"
+
+    # Return cached data if available
+    if cache_key in _iot_respon_cache:
+        print(f"DEBUG: Using cached data for {cache_key}")
+        return _iot_respon_cache[cache_key]
+
+    print(f"DEBUG: Fetching fresh data for {cache_key}")
 
     try:
-        # Connect to PostgreSQL and query vw_sla_iot_operations with retry logic
+        # Connect to PostgreSQL with retry logic
         import time
         max_retries = 3
         retry_delay = 2
-
         conn = None
         for attempt in range(max_retries):
             try:
@@ -780,10 +874,9 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
                 if "recovery mode" in str(e).lower() and attempt < max_retries - 1:
                     print(f"Database in recovery mode, retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})")
                     time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                    retry_delay *= 2
                 else:
                     raise e
-
         if conn is None:
             raise Exception("Failed to connect to database after all retries")
 
@@ -793,11 +886,10 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
             'Mei': 5, 'Juni': 6, 'Juli': 7, 'Agustus': 8,
             'September': 9, 'Oktober': 10, 'November': 11, 'Desember': 12
         }
-
         month_num = month_mapping.get(month_name, 1)
         current_year = datetime.now().year
 
-        # First, get total count and all records for overall statistics
+        # Get all records for the month
         cursor.execute("""
         SELECT
             problem,
@@ -821,85 +913,122 @@ async def _generate_iot_respon_page(request: Request, records: list, month_name:
         """, (f"{current_year}/{month_num:02d}/%",))
 
         all_rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
         print(f"DEBUG: Query executed successfully. Found {len(all_rows)} total rows for {month_name} {current_year}")
-        print(f"DEBUG: Query pattern was: {current_year}/{month_num:02d}/%")
 
-        # Calculate pagination
-        items_per_page = 20
-        start_idx = (page_number - 1) * items_per_page
-        end_idx = start_idx + items_per_page
-        rows = all_rows[start_idx:end_idx]
-        print(f"DEBUG: Pagination - showing rows {start_idx+1} to {min(end_idx, len(all_rows))} of {len(all_rows)}")
-
-        # Calculate overall statistics from ALL records
+        # Process all data and calculate statistics
+        processed_data = []
         total_respon_achievement_all = 0
         total_penyelesaian_achievement_all = 0
-        for row in all_rows:
-            total_respon_achievement_all += (row[13] or 0)  # respon_achievement
-            total_penyelesaian_achievement_all += (row[14] or 0)  # penyelesaian_achievement
 
-        # Process paginated data and map to template format
-        for i, row in enumerate(rows):
+        for i, row in enumerate(all_rows):
             (problem, tanggal_problem, waktu_problem, tanggal_respon, waktu_respon,
              tanggal_penyelesaian, waktu_penyelesaian, pic_pama, engineer_managed_service,
              sla_waktu_respon, aktual_waktu_respon, sla_waktu_penyelesaian,
              aktual_waktu_penyelesaian, respon_achievement, penyelesaian_achievement) = row
 
+            # Calculate for overall statistics
+            total_respon_achievement_all += (respon_achievement or 0)
+            total_penyelesaian_achievement_all += (penyelesaian_achievement or 0)
+
             # Convert times to integers/strings as needed
             waktu_respon_menit = int(round(float(aktual_waktu_respon or 0)))
             waktu_penyelesaian_menit = int(round(float(aktual_waktu_penyelesaian or 0)))
 
-            # Map all fields directly from PostgreSQL view
-            respon_data.append({
-                "no": start_idx + i + 1,  # Global numbering
+            # Process data for template format
+            processed_data.append({
                 "problem": problem or 'No Description',
                 "tanggal_problem": tanggal_problem or '',
-                "waktu_problem": str(waktu_problem or '').split('.')[0],  # Remove microseconds
+                "waktu_problem": str(waktu_problem or '').split('.')[0],
                 "tanggal_respon": tanggal_respon or '',
                 "tanggal_penyelesaian": tanggal_penyelesaian or '',
-                "waktu_penyelesaian": str(waktu_penyelesaian or '').split('.')[0],  # Remove microseconds
+                "waktu_penyelesaian": str(waktu_penyelesaian or '').split('.')[0],
                 "pic_pama": pic_pama or 'N/A',
                 "engineer": engineer_managed_service or 'N/A',
                 "waktu_respon_menit": waktu_respon_menit,
-                "aktual_waktu_1": waktu_respon_menit,  # Same as waktu_respon_menit
+                "aktual_waktu_1": waktu_respon_menit,
                 "aktual_waktu_2": waktu_penyelesaian_menit,
-                "aktual_waktu_3": sla_waktu_respon or 0,  # SLA target for response
-                "aktual_waktu_4": sla_waktu_penyelesaian or 0,  # SLA target for resolution
+                "aktual_waktu_3": sla_waktu_respon or 0,
+                "aktual_waktu_4": sla_waktu_penyelesaian or 0,
                 "performance_respon_1": (respon_achievement or 0) * 100,
                 "performance_respon_2": 100 if (aktual_waktu_respon or 0) <= (sla_waktu_respon or 0) else 0,
                 "performance_penyelesaian_1": (penyelesaian_achievement or 0) * 100,
                 "performance_penyelesaian_2": 100 if (aktual_waktu_penyelesaian or 0) <= (sla_waktu_penyelesaian or 0) else 0
             })
 
-        cursor.close()
-        conn.close()
+        # Calculate summary percentages
+        overall_summary_percentage = 0.0
+        if len(all_rows) > 0:
+            avg_respon = (total_respon_achievement_all / len(all_rows)) * 100
+            avg_penyelesaian = (total_penyelesaian_achievement_all / len(all_rows)) * 100
+            overall_summary_percentage = round((avg_respon + avg_penyelesaian) / 2, 1)
 
-        # Calculate overall average achievement percentage from ALL records
-        total_all_records = len(all_rows)
-        if total_all_records > 0:
-            avg_respon_achievement = (total_respon_achievement_all / total_all_records) * 100
-            avg_penyelesaian_achievement = (total_penyelesaian_achievement_all / total_all_records) * 100
-            summary_percentage = round((avg_respon_achievement + avg_penyelesaian_achievement) / 2, 1)
-        else:
-            summary_percentage = 0.0
+        # Cache the processed data
+        cached_data = {
+            "all_data": processed_data,
+            "total_records": len(all_rows),
+            "overall_summary_percentage": overall_summary_percentage
+        }
+        _iot_respon_cache[cache_key] = cached_data
+
+        return cached_data
 
     except Exception as e:
-        print(f"Error querying PostgreSQL vw_sla_iot_operations: {e}")
-        print(f"Error type: {type(e).__name__}")
-        print(f"Month name: {month_name}, Month num: {month_num}, Year: {current_year}")
-        print(f"DB_URL: {config.DB_URL[:50]}...")
-        # Fallback to empty data
-        respon_data = []
-        summary_percentage = 0.0
+        print(f"Error fetching IoT respon data: {e}")
+        return {"all_data": [], "total_records": 0, "overall_summary_percentage": 0.0}
 
-    # Render template as string instead of TemplateResponse for progressive generation
-    template = templates.get_template('tasklistiotoperation/detail_respon_resolution_time.html')
-    return template.render({
-        "request": request,
-        "respon_data": respon_data,
-        "summary_percentage": str(summary_percentage),
-        "month": month_name
-    })
+async def _generate_iot_respon_page(request: Request, records: list, month_name: str, page_number: int = 1, total_pages: int = 1):
+    """Generate response time page using cached data with efficient pagination"""
+    try:
+        # Get cached data
+        cached_data = await _get_iot_respon_data_cached(month_name)
+        all_data = cached_data["all_data"]
+        total_records = cached_data["total_records"]
+        overall_summary_percentage = cached_data["overall_summary_percentage"]
+
+        # Apply pagination to cached data
+        items_per_page = 50
+        start_idx = (page_number - 1) * items_per_page
+        end_idx = start_idx + items_per_page
+        paginated_data = all_data[start_idx:end_idx]
+
+        print(f"DEBUG: Pagination from cache - showing rows {start_idx+1} to {min(end_idx, total_records)} of {total_records}")
+
+        # Add sequential numbering for the page
+        respon_data = []
+        for i, item in enumerate(paginated_data):
+            item_copy = item.copy()
+            item_copy["no"] = start_idx + i + 1  # Global numbering
+            respon_data.append(item_copy)
+
+        # Only show summary on the last page
+        summary_percentage = None
+        if page_number == total_pages and total_records > 0:
+            summary_percentage = f"{overall_summary_percentage:.1f}"
+
+        print(f"DEBUG: Summary percentage for page {page_number}/{total_pages}: {summary_percentage}")
+
+        # Render template
+        template = templates.get_template('tasklistiotoperation/detail_respon_resolution_time.html')
+        return template.render({
+            "request": request,
+            "respon_data": respon_data,
+            "summary_percentage": summary_percentage,
+            "month": month_name
+        })
+
+    except Exception as e:
+        print(f"Error generating IoT respon page: {e}")
+        # Fallback to empty data
+        template = templates.get_template('tasklistiotoperation/detail_respon_resolution_time.html')
+        return template.render({
+            "request": request,
+            "respon_data": [],
+            "summary_percentage": None,
+            "month": month_name
+        })
 
 @app.post("/report/evidence")
 async def generate_evidence_report(
@@ -1524,7 +1653,7 @@ async def _calculate_iot_tasklist_pages(section_type: str, month: int) -> int:
                 return 0
 
             # Calculate pages needed (max 10 items per page)
-            items_per_page = 20
+            items_per_page = 50
             total_pages = (count + items_per_page - 1) // items_per_page
             return total_pages
 
@@ -1574,7 +1703,7 @@ async def _calculate_iot_tasklist_pages(section_type: str, month: int) -> int:
                 return 0
 
             # Calculate pages needed (max 10 items per page)
-            items_per_page = 20
+            items_per_page = 50
             total_items = len(records)
             total_pages = (total_items + items_per_page - 1) // items_per_page
 
@@ -1784,27 +1913,9 @@ async def retry_section(
 async def _generate_single_timesheet_section(employee_name: str, month: int, year: int, report_type: str, request: Request):
     """Generate timesheet section for single employee"""
     try:
-        # Get employee info first
-        employee_table = config.NOCODB_TABLES.get("employee_data")
-        nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
-
-        if report_type == "iotoperation":
-            # For IoT Operations, include specific NRPs: JIMT24011 and JIMT24012
-            # Get all employees first, then filter to include both IoT Operations role and specific NRPs
-            all_employees = nocodb_employee.get_all_employees()
-            employee_mapping = {}
-
-            for name, info in all_employees.items():
-                employee_role = info.get('role', '').strip()
-                employee_nrp = info.get('nrp', '').strip()
-
-                # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
-                if (employee_role == "IoT Operations" or
-                    employee_nrp in ["JIMT24011", "JIMT24012", "JIMT24001"]):
-                    employee_mapping[name] = info
-        else:
-            role_filter = "Developer"
-            employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
+        # Use cached employee data
+        all_employees = await _get_employee_data_cached()
+        employee_mapping = _filter_employees_by_type(all_employees, report_type)
 
         if employee_name not in employee_mapping:
             return None
@@ -1863,27 +1974,9 @@ async def _generate_single_tasklist_section(section_type: str, month: int, repor
 async def _generate_single_attendance_section(employee_name: str, month: int, year: int, report_type: str, request: Request):
     """Generate attendance section for single employee"""
     try:
-        # Get employee info
-        employee_table = config.NOCODB_TABLES.get("employee_data")
-        nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
-
-        if report_type == "iotoperation":
-            # For IoT Operations, include specific NRPs: JIMT24011 and JIMT24012
-            # Get all employees first, then filter to include both IoT Operations role and specific NRPs
-            all_employees = nocodb_employee.get_all_employees()
-            employee_mapping = {}
-
-            for name, info in all_employees.items():
-                employee_role = info.get('role', '').strip()
-                employee_nrp = info.get('nrp', '').strip()
-
-                # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
-                if (employee_role == "IoT Operations" or
-                    employee_nrp in ["JIMT24011", "JIMT24012", "JIMT24001"]):
-                    employee_mapping[name] = info
-        else:
-            role_filter = "Developer"
-            employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
+        # Use cached employee data
+        all_employees = await _get_employee_data_cached()
+        employee_mapping = _filter_employees_by_type(all_employees, report_type)
 
         if employee_name not in employee_mapping:
             return None
@@ -2003,7 +2096,7 @@ async def _get_iot_tasklist_html_content(month: int, section_type: str, request:
                 records.append(record)
 
         # Apply pagination to records
-        items_per_page = 20
+        items_per_page = 50
         start_idx = (page_number - 1) * items_per_page
         end_idx = start_idx + items_per_page
         paginated_records = records[start_idx:end_idx]
@@ -2099,28 +2192,9 @@ async def _get_developer_tasklist_html_content(month: int, section_type: str, re
 
 async def _get_timesheet_html_sections(month: int, year: int, report_type: str, request: Request):
     """Get timesheet HTML for each employee separately, filtered by role"""
-    employee_table = config.NOCODB_TABLES.get("employee_data")
-    nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
-
-    if report_type == "iotoperation":
-        # For IoT Operations, include specific NRPs: JIMT24011 and JIMT24012
-        # Get all employees first, then filter to include both IoT Operations role and specific NRPs
-        all_employees = nocodb_employee.get_all_employees()
-        employee_mapping = {}
-
-        for name, info in all_employees.items():
-            employee_role = info.get('role', '').strip()
-            employee_nrp = info.get('nrp', '').strip()
-
-            # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
-            if (employee_role == "IoT Operations" or
-                employee_nrp in ["JIMT24011", "JIMT24012", "JIMT24001"]):
-                employee_mapping[name] = info
-    elif report_type == "developer":
-        role_filter = "Developer"
-        employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
-    else:
-        employee_mapping = nocodb_employee.get_all_employees()
+    # Use cached employee data
+    all_employees = await _get_employee_data_cached()
+    employee_mapping = _filter_employees_by_type(all_employees, report_type)
 
     timesheet_htmls = []
 
@@ -2579,31 +2653,13 @@ async def _get_evidence_html_section(evidence_type: str, month: int, request: Re
 
 async def _get_attendance_html_section(month: int, year: int, report_type: str, request: Request):
     """Get attendance HTML section filtered by role"""
-    employee_table = config.NOCODB_TABLES.get("employee_data")
+    # Use cached employee data
+    all_employees = await _get_employee_data_cached()
+    employee_mapping = _filter_employees_by_type(all_employees, report_type)
+
+    # Setup attendance data processor
     attendance_table = config.NOCODB_TABLES.get("attendance")
-
-    nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
     nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
-
-    if report_type == "iotoperation":
-        # For IoT Operations, include specific NRPs: JIMT24011 and JIMT24012
-        # Get all employees first, then filter to include both IoT Operations role and specific NRPs
-        all_employees = nocodb_employee.get_all_employees()
-        employee_mapping = {}
-
-        for name, info in all_employees.items():
-            employee_role = info.get('role', '').strip()
-            employee_nrp = info.get('nrp', '').strip()
-
-            # Include if they have IoT Operations role OR are JIMT24011/JIMT24012
-            if (employee_role == "IoT Operations" or
-                employee_nrp in ["JIMT24011", "JIMT24012", "JIMT24001"]):
-                employee_mapping[name] = info
-    elif report_type == "developer":
-        role_filter = "Developer"
-        employee_mapping = nocodb_employee.get_all_employees(role_filter=role_filter)
-    else:
-        employee_mapping = nocodb_employee.get_all_employees()
     start_date, end_date = get_dynamic_month_dates(year, month)
 
     reports_data = []
@@ -2683,10 +2739,8 @@ async def attendance_celerates_dashboard_get(request: Request):
 
     from datetime import datetime, timedelta
 
-    # Get employee list for filter dropdown
-    employee_table = config.NOCODB_TABLES.get("employee_data")
-    nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
-    employee_mapping = nocodb_employee.get_all_employees()
+    # Get employee list for filter dropdown using cache
+    employee_mapping = await _get_employee_data_cached()
     employee_list = list(employee_mapping.keys())
 
     # Create employee_roles mapping for template
@@ -2718,10 +2772,8 @@ async def attendance_celerates_dashboard_post(
 
     from datetime import datetime, date, timedelta
 
-    # Get employee list for filter dropdown
-    employee_table = config.NOCODB_TABLES.get("employee_data")
-    nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
-    employee_mapping = nocodb_employee.get_all_employees()
+    # Get employee list for filter dropdown using cache
+    employee_mapping = await _get_employee_data_cached()
     employee_list = list(employee_mapping.keys())
 
     attendance_data = []
@@ -2862,10 +2914,8 @@ async def export_attendance_celerates_csv(
     start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
     end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
 
-    # Get same data as dashboard
-    employee_table = config.NOCODB_TABLES.get("employee_data")
-    nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table)
-    employee_mapping = nocodb_employee.get_all_employees()
+    # Get same data as dashboard using cache
+    employee_mapping = await _get_employee_data_cached()
     employee_list = list(employee_mapping.keys())
 
     attendance_table = config.NOCODB_TABLES.get("attendance")
@@ -3095,6 +3145,55 @@ async def health_check():
     return {"status": "healthy", "service": "digital-bast-admin"}
 
 # Initialize database on startup
+@app.get("/testresponresolutiontime")
+async def test_response_resolution_time(request: Request):
+    """Test endpoint for response resolution time with 50 dummy rows"""
+    # Generate 50 dummy data rows
+    respon_data = []
+    for i in range(1, 51):
+        respon_data.append({
+            'no': i,
+            'problem': f'Pengecekan sistem monitoring server aplikasi dan database utama untuk memastikan performa optimal - Issue {i}',
+            'tanggal_problem': '2026/02/01',
+            'waktu_problem': f'{10 + (i % 12):02d}:57:00',
+            'tanggal_respon': '2026/02/01',
+            'tanggal_penyelesaian': '2026/02/01',
+            'waktu_penyelesaian': f'{10 + (i % 12):02d}:59:00',
+            'pic_pama': 'Bagas Eko Prasetyo',
+            'engineer': 'Titin Ervina Sari',
+            'waktu_respon_menit': i % 5 + 1,
+            'aktual_waktu_1': i % 3 + 1,
+            'aktual_waktu_2': i % 4 + 1,
+            'aktual_waktu_3': i % 2 + 1,
+            'aktual_waktu_4': i % 6 + 1,
+            'performance_respon_1': 144 - (i % 20),
+            'performance_respon_2': 100 + (i % 10),
+            'performance_penyelesaian_1': 100 - (i % 15),
+            'performance_penyelesaian_2': 100 + (i % 5)
+        })
+
+    # Render the response resolution time template
+    template = templates.get_template('tasklistiotoperation/detail_respon_resolution_time.html')
+    response_content = template.render({
+        "request": request,
+        "respon_data": respon_data,
+        "summary_percentage": 99.8
+    })
+
+    # Use report_editor container but with our response content
+    html_sections = [{
+        'type': 'tasklist',
+        'title': 'Test Response Resolution Time (50 Rows)',
+        'content': response_content
+    }]
+
+    return templates.TemplateResponse('report_editor.html', {
+        "request": request,
+        "html_sections": html_sections,
+        "logo_pama_url": '/admin/static/img/logo_pama.png',
+        "logo_celerates_url": '/admin/static/img/logo_celerates.jpg'
+    })
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and other startup tasks"""

@@ -22,20 +22,26 @@
         .iot-respon-section table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 9px;
+            font-size: 8px;
             border: 2px solid #000;
+            table-layout: fixed;
         }
         .iot-respon-section th {
             background-color: #9BB5D6;
             color: #000;
             font-weight: bold;
-            padding: 6px 4px;
+            padding: 4px 3px;
             text-align: center;
             border: 1px solid #000;
             vertical-align: middle;
+            font-size: 7px;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .iot-respon-section td {
-            padding: 4px 2px;
+            padding: 3px 2px;
             border: 1px solid #000;
             text-align: center;
             vertical-align: middle;
@@ -44,29 +50,36 @@
             text-align: left;
         }
         .no-col {
-            width: 2%;
+            width: 3%;
         }
         .problem-col {
-            width: 12%;
+            width: 24%;
         }
         .date-col {
-            width: 4%;
+            width: 5%;
         }
         .time-col {
-            width: 3%;
+            width: 5%;
         }
         .pic-col {
-            width: 5%;
+            width: 6%;
         }
         .engineer-col {
-            width: 5%;
+            width: 8%;
         }
         .performance-col {
-            width: 3%;
+            width: 4%;
         }
         .summary-row {
             background-color: #E6E6E6;
             font-weight: bold;
+        }
+
+        /* Optimize for A4 paper width like timesheet */
+        .iot-respon-section {
+            transform: scale(0.80);
+            transform-origin: top left;
+            width: 180%;
         }
     </style>
 </head>
@@ -82,18 +95,18 @@
                     <th rowspan="2" class="problem-col">Problem</th>
                     <th rowspan="2" class="date-col">Tanggal Problem</th>
                     <th rowspan="2" class="time-col">Waktu Problem</th>
-                    <th rowspan="2" class="date-col">Tanggal<br>Waktu Respon</th>
-                    <th rowspan="2" class="date-col">Tanggal<br>Waktu Penyelesaian</th>
+                    <th rowspan="2" class="date-col">Tanggal Waktu Respon</th>
+                    <th rowspan="2" class="date-col">Tanggal Waktu Penyelesaian</th>
                     <th rowspan="2" class="time-col">Waktu Penyelesaian</th>
                     <th rowspan="2" class="pic-col">PIC PAMA</th>
-                    <th rowspan="2" class="engineer-col">Engineer<br>Manage Service</th>
-                    <th rowspan="2" class="performance-col">Waktu Respon<br>(Menit)</th>
+                    <th rowspan="2" class="engineer-col">Engineer Manage Service</th>
+                    <th rowspan="2" class="performance-col">Waktu Respon (Menit)</th>
                     <th colspan="4">Aktual Waktu Respon</th>
                     <th colspan="2">Performance Waktu Respon</th>
                     <th colspan="2">Performance Waktu Penyelesaian</th>
                 </tr>
                 <tr>
-                    <th class="performance-col">Waktu<br>Penyelesaian<br>(Menit)</th>
+                    <th class="performance-col">Waktu Penyelesaian (Menit)</th>
                     <th class="performance-col">(Menit)</th>
                     <th class="performance-col">(Menit)</th>
                     <th class="performance-col">(Menit)</th>
@@ -126,10 +139,12 @@
                     <td class="performance-col">{{ item.performance_penyelesaian_2 }}%</td>
                 </tr>
                 {% endfor %}
+                {% if summary_percentage %}
                 <tr class="summary-row">
                     <td colspan="17" class="left-align">Rata Rata Waktu Respon dan Waktu Penyelesaian</td>
                     <td class="performance-col">{{ summary_percentage }}%</td>
                 </tr>
+                {% endif %}
             </tbody>
         </table>
         </div>
