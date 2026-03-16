@@ -613,6 +613,7 @@
             await processNextSection();
         }
 
+
         // Sequential processing (stable, reliable)
         async function processNextSection() {
             if (!generationState.isGenerating || generationState.isPaused) return;
@@ -640,12 +641,12 @@
             // Continue with next section if more pending sections exist
             const stillPending = generationState.sections.filter(s => s.status === 'pending');
             if (stillPending.length > 0 && !generationState.isPaused) {
-                // Store timeout ID for clean cancellation
+                // Small delay to prevent overwhelming server
                 generationState.currentTimeout = setTimeout(() => {
                     if (!generationState.isPaused && generationState.isGenerating) {
                         processNextSection();
                     }
-                }, 200); // Shorter delay for better responsiveness
+                }, 100);
             } else if (stillPending.length === 0) {
                 completeGeneration();
             }
@@ -676,11 +677,14 @@
                     // Add to live preview
                     addSectionToPreview(result.section);
 
-                    // Stream section to server session (avoid localStorage overflow)
-                    await streamSectionToSession(result.section);
-
                     // Update display immediately after success
                     updateSectionDisplay(section);
+
+                    // Stream section to server session (avoid localStorage overflow) - do this after UI update
+                    streamSectionToSession(result.section).catch(err => {
+                        console.warn('Failed to stream section to session:', err);
+                        // Don't fail the whole section for this
+                    });
 
                 } else {
                     // Section failed

@@ -1887,6 +1887,52 @@ async def generate_section(
     """Generate a specific section by ID"""
     return await _generate_section_logic(request, section_id, plan_id)
 
+@app.post("/api/generate/bulk-data")
+async def generate_bulk_data(
+    request: Request,
+    plan_id: str = Form(...)
+):
+    """Get ALL data needed for client-side rendering (much faster!)"""
+    try:
+        # Get plan from SQLite database
+        plan = get_generation_plan(plan_id)
+        if not plan:
+            return {"success": False, "error": f"No generation plan found with ID: {plan_id}"}
+
+        # Pre-warm all caches
+        all_employees = await _get_employee_data_cached()
+
+        # Get bulk data for all sections at once
+        # Convert month number to Indonesian month name if needed
+        month_name = plan.get("month_name")
+        if not month_name:
+            month_names = {
+                1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+                5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+                9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+            }
+            month_name = month_names.get(plan.get("month", 1), 'Januari')
+
+        iot_data = await _get_iot_respon_data_cached(month_name)
+
+        # Prepare bulk data response
+        bulk_data = {
+            "plan": plan,
+            "employees": all_employees,
+            "iot_data": iot_data,
+            "month_name": month_name
+        }
+
+        return {
+            "success": True,
+            "plan_id": plan_id,
+            "bulk_data": bulk_data
+        }
+
+    except Exception as e:
+        print(f"Error generating bulk data: {e}")
+        return {"success": False, "error": str(e)}
+
 @app.post("/api/stream/section")
 async def stream_section_to_session(request: Request):
     """Store completed section in server session (avoid localStorage overflow)"""
