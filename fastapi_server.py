@@ -2956,9 +2956,9 @@ async def attendance_celerates_dashboard_post(
                         if not schedule.get('Shift Data'):
                             shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
                         else:
-                            codes, start_times, end_times = schedule.get('Code', []), schedule.get('Start Time', []), schedule.get('End Time', [])
-                            if codes and start_times and end_times:
-                                shift_code = codes[0] if isinstance(codes, list) else codes
+                            shift_names, start_times, end_times = schedule.get('Shift Name', []), schedule.get('Start Time', []), schedule.get('End Time', [])
+                            if shift_names and start_times and end_times:
+                                shift_code = shift_names[0] if isinstance(shift_names, list) else shift_names
                                 start_time_raw, end_time_raw = (start_times[0] if isinstance(start_times, list) else start_times), (end_times[0] if isinstance(end_times, list) else end_times)
                                 schedule_in_time = ':'.join(str(start_time_raw).split(':')[:2]) if start_time_raw else '7:30'
                                 schedule_out_time = ':'.join(str(end_time_raw).split(':')[:2]) if end_time_raw else '16:30'
