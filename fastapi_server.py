@@ -2942,7 +2942,7 @@ async def attendance_celerates_dashboard_post(
                     nocodb_schedule = ClsNocoDBProcessor(config.APP_BASE_ID, schedule_table)
 
                     # Get employee numeric Id for Unique Key construction
-                    emp_numeric_id = emp_info.get('Id')
+                    emp_numeric_id = emp_info.get('id')
                     if emp_numeric_id:
                         unique_key = f"{rec_date.strftime('%Y-%m-%d')}_{emp_numeric_id}"
                         where_schedule = f"(Unique Key,eq,{unique_key})"
