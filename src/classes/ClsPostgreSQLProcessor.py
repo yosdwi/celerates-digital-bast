@@ -228,6 +228,38 @@ class ClsPostgreSQLProcessor:
                                                 WHERE id = %s
                                             ''', (timesheet_id, timesheet_id, attendance_id))
 
+                                        # Create Employee linking (M2M) for UPDATE case
+                                        if employee_id:
+                                            cursor.execute(f'''
+                                                INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Employee Data"
+                                                ("Employee Data_id", timesheet_id)
+                                                VALUES (%s, %s)
+                                                ON CONFLICT ("Employee Data_id", timesheet_id) DO NOTHING
+                                            ''', (employee_id, timesheet_id))
+
+                                        # Create Task linking (M2M) for UPDATE case
+                                        task_ids = record.get("_task_ids", [])
+                                        task_field_name = record.get("_task_field_name")
+
+                                        if task_ids and task_field_name:
+                                            for task_id in task_ids[:1]:  # Only link first task
+                                                if task_field_name == "Task List Table":
+                                                    # Developer task
+                                                    cursor.execute(f'''
+                                                        INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Tasklist Develo1"
+                                                        ("Tasklist Developer_id", timesheet_id)
+                                                        VALUES (%s, %s)
+                                                        ON CONFLICT ("Tasklist Developer_id", timesheet_id) DO NOTHING
+                                                    ''', (task_id, timesheet_id))
+                                                elif task_field_name == "Task List IoT Table":
+                                                    # IoT task
+                                                    cursor.execute(f'''
+                                                        INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Tasklist IoT Op"
+                                                        ("Tasklist IoT Operations_id", timesheet_id)
+                                                        VALUES (%s, %s)
+                                                        ON CONFLICT ("Tasklist IoT Operations_id", timesheet_id) DO NOTHING
+                                                    ''', (task_id, timesheet_id))
+
                                 if cursor.rowcount == 0:
                                     insert_query = f'''
                                     INSERT INTO "{self.schema}"."timesheet"
@@ -263,6 +295,38 @@ class ClsPostgreSQLProcessor:
                                         SET "timesheet_id" = %s, "timesheet_id1" = %s
                                         WHERE id = %s
                                     ''', (timesheet_id, timesheet_id, attendance_id))
+
+                                # Create Employee linking (M2M)
+                                if employee_id:
+                                    cursor.execute(f'''
+                                        INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Employee Data"
+                                        ("Employee Data_id", timesheet_id)
+                                        VALUES (%s, %s)
+                                        ON CONFLICT ("Employee Data_id", timesheet_id) DO NOTHING
+                                    ''', (employee_id, timesheet_id))
+
+                                # Create Task linking (M2M) based on employee role
+                                task_ids = record.get("_task_ids", [])
+                                task_field_name = record.get("_task_field_name")
+
+                                if task_ids and task_field_name:
+                                    for task_id in task_ids[:1]:  # Only link first task
+                                        if task_field_name == "Task List Table":
+                                            # Developer task
+                                            cursor.execute(f'''
+                                                INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Tasklist Develo1"
+                                                ("Tasklist Developer_id", timesheet_id)
+                                                VALUES (%s, %s)
+                                                ON CONFLICT ("Tasklist Developer_id", timesheet_id) DO NOTHING
+                                            ''', (task_id, timesheet_id))
+                                        elif task_field_name == "Task List IoT Table":
+                                            # IoT task
+                                            cursor.execute(f'''
+                                                INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Tasklist IoT Op"
+                                                ("Tasklist IoT Operations_id", timesheet_id)
+                                                VALUES (%s, %s)
+                                                ON CONFLICT ("Tasklist IoT Operations_id", timesheet_id) DO NOTHING
+                                            ''', (task_id, timesheet_id))
 
                                 batch_success += 1
 
