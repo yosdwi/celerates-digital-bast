@@ -2960,8 +2960,13 @@ async def attendance_celerates_dashboard_post(
                             if shift_names and start_times and end_times:
                                 shift_code = shift_names[0] if isinstance(shift_names, list) else shift_names
                                 start_time_raw, end_time_raw = (start_times[0] if isinstance(start_times, list) else start_times), (end_times[0] if isinstance(end_times, list) else end_times)
-                                schedule_in_time = ':'.join(str(start_time_raw).split(':')[:2]) if start_time_raw else '7:30'
-                                schedule_out_time = ':'.join(str(end_time_raw).split(':')[:2]) if end_time_raw else '16:30'
+
+                                # Convert "Libur" to "Day Off" for consistency
+                                if 'libur' in shift_code.lower() or str(start_time_raw) == '00:00:00':
+                                    shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+                                else:
+                                    schedule_in_time = ':'.join(str(start_time_raw).split(':')[:2]) if start_time_raw else '7:30'
+                                    schedule_out_time = ':'.join(str(end_time_raw).split(':')[:2]) if end_time_raw else '16:30'
                             else:
                                 shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
                     else:
