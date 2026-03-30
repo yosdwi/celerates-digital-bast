@@ -7,11 +7,12 @@ import json
 import uuid
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from pathlib import Path
 import re
 import psycopg2
 import bcrypt
+import zipfile
 
 from fastapi import FastAPI, HTTPException, Depends, Request, Form, File, UploadFile, status, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse, Response, RedirectResponse
@@ -3001,7 +3002,7 @@ async def export_attendance_celerates_csv(
     request: Request,
     start_date: str = Form(...),
     end_date: str = Form(...),
-    employee: str = Form(""),
+    employee: List[str] = Form(default=[]),
     role_filter: str = Form("")
 ):
     """Export Attendance Celerates data as CSV with custom date range"""
@@ -3024,19 +3025,106 @@ async def export_attendance_celerates_csv(
     attendance_table = config.NOCODB_TABLES.get("attendance")
     nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
 
-    csv_data = []
-
     # Apply role filtering to employee list
     filtered_employee_list = employee_list
     if role_filter and role_filter != "all":
         filtered_employee_list = [emp for emp in employee_list if employee_mapping[emp].get('role') == role_filter]
 
-    target_employees = [employee] if employee else filtered_employee_list
+    target_employees = employee if any(employee) else filtered_employee_list
 
+    # If multiple employees, create a zip file
+    if len(target_employees) > 1:
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for emp_name in target_employees:
+                employee_csv_data = []
+                if emp_name not in employee_mapping:
+                    continue
+
+                emp_info = employee_mapping[emp_name]
+                where_clause = f"(Name,like,%{emp_name.strip().title()}%)"
+                response = nocodb_attendance.get_records(limit=2000, where=where_clause)
+                records = response.get('list', []) if response else []
+
+                for rec in records:
+                    rec_date_str = rec.get('Date')
+                    if not rec_date_str:
+                        continue
+                    rec_date = datetime.strptime(rec_date_str, '%Y-%m-%d').date()
+                    if start_date_obj <= rec_date <= end_date_obj:
+                        # (The entire business logic for a single row is preserved here)
+                        def get_time(val):
+                            if not val: return ''
+                            actual_val = val[0] if isinstance(val, list) else val
+                            if actual_val is None or str(actual_val).strip() == '': return ''
+                            time_str = str(actual_val)
+                            return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
+                        last_modified = rec.get('Last Modified', '')
+                        is_manual_edit = 'Yes' if last_modified and '@system.com' not in str(last_modified) else 'No'
+                        start_time, end_time, holiday = get_time(rec.get('Start Time')), get_time(rec.get('End Time')), rec.get('Holiday', '')
+                        is_iot_operations = emp_info.get('role') == 'IoT Operations'
+                        schedule_in_time, schedule_out_time, shift_code = '7:30', '16:30', 'N'
+                        if is_iot_operations:
+                            schedule_table = config.NOCODB_TABLES.get("schedule_shifting")
+                            nocodb_schedule = ClsNocoDBProcessor(config.APP_BASE_ID, schedule_table)
+                            emp_numeric_id = emp_info.get('id')
+                            schedule_response = None
+                            if emp_numeric_id:
+                                unique_key = f"{rec_date.strftime('%Y-%m-%d')}_{emp_numeric_id}"
+                                where_schedule = f"(Unique Key,eq,{unique_key})"
+                                schedule_response = nocodb_schedule.get_records(limit=5, where=where_schedule)
+                            schedule_records = schedule_response.get('list', []) if schedule_response else []
+                            if schedule_records:
+                                schedule = schedule_records[0]
+                                if not schedule.get('Shift Data'):
+                                    shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+                                else:
+                                    shift_names, start_times, end_times = schedule.get('Shift Name', []), schedule.get('Start Time', []), schedule.get('End Time', [])
+                                    if shift_names and start_times and end_times:
+                                        shift_code = shift_names[0] if isinstance(shift_names, list) else shift_names
+                                        start_time_raw, end_time_raw = (start_times[0] if isinstance(start_times, list) else start_times), (end_times[0] if isinstance(end_times, list) else end_times)
+                                        if 'libur' in shift_code.lower() or str(start_time_raw) == '00:00:00':
+                                            shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+                                        else:
+                                            schedule_in_time = ':'.join(str(start_time_raw).split(':')[:2]) if start_time_raw else '7:30'
+                                            schedule_out_time = ':'.join(str(end_time_raw).split(':')[:2]) if end_time_raw else '16:30'
+                                    else:
+                                        shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+                            else:
+                                shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+                        else:
+                            has_time = start_time or end_time
+                            is_holiday = str(holiday).upper() == 'H'
+                            shift_code = 'Day Off' if is_holiday or not has_time else 'N'
+                            if is_holiday or not has_time:
+                                schedule_in_time, schedule_out_time = '', ''
+                        
+                        employee_csv_data.append({
+                            'Employee ID': emp_info.get('employee_id', emp_info.get('nrp', '')), 'Full Name': emp_name, 'Date': rec_date.strftime('%Y-%m-%d'),
+                            'Shift': shift_code, 'Shift Code': '', 'Shift Label': '', 'Schedule In': schedule_in_time, 'Schedule Out': schedule_out_time,
+                            'Attendance Code': rec.get('Attendance_Code', ''), 'Check In': start_time, 'Check Out': end_time, 'Keterangan': rec.get('Remarks', ''),
+                            'Overtime Check In': get_time(rec.get('Overtime_Check_In')), 'Overtime Check Out': get_time(rec.get('Overtime_Check_Out')),
+                            'Overtime Before': get_time(rec.get('Overtime_Before')), 'Overtime After': get_time(rec.get('Overtime_After')),
+                            'TimeOff Check Out': get_time(rec.get('TimeOff_Check_Out')), 'TimeOff Break Before': get_time(rec.get('TimeOff_Break_Before')),
+                            'TimeOff Break After': get_time(rec.get('TimeOff_Break_After')), 'Holiday Code': holiday
+                        })
+                
+                if employee_csv_data:
+                    employee_csv_data.sort(key=lambda x: x['Date'])
+                    output = io.StringIO()
+                    writer = csv.DictWriter(output, fieldnames=employee_csv_data[0].keys())
+                    writer.writeheader()
+                    writer.writerows(employee_csv_data)
+                    zipf.writestr(f"Attendance_Celerates_{emp_name.replace(' ', '_')}_{start_date}_to_{end_date}.csv", output.getvalue())
+
+        zip_buffer.seek(0)
+        return Response(zip_buffer.getvalue(), media_type="application/x-zip-compressed", headers={"Content-Disposition": f"attachment; filename=Attendance_Celerates_{start_date}_to_{end_date}.zip"})
+
+    # Logic for single employee (or all if none selected) - largely unchanged
+    csv_data = []
     for emp_name in target_employees:
         if emp_name not in employee_mapping:
             continue
-
         emp_info = employee_mapping[emp_name]
         where_clause = f"(Name,like,%{emp_name.strip().title()}%)"
         response = nocodb_attendance.get_records(limit=2000, where=where_clause)
@@ -3044,112 +3132,70 @@ async def export_attendance_celerates_csv(
 
         for rec in records:
             rec_date_str = rec.get('Date')
-            if not rec_date_str:
-                continue
-
+            if not rec_date_str: continue
             rec_date = datetime.strptime(rec_date_str, '%Y-%m-%d').date()
             if start_date_obj <= rec_date <= end_date_obj:
-
+                # (Duplicated business logic for single file case)
                 def get_time(val):
                     if not val: return ''
                     actual_val = val[0] if isinstance(val, list) else val
                     if actual_val is None or str(actual_val).strip() == '': return ''
                     time_str = str(actual_val)
                     return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
-
-                # Check for manual edit
                 last_modified = rec.get('Last Modified', '')
                 is_manual_edit = 'Yes' if last_modified and '@system.com' not in str(last_modified) else 'No'
-
-                # Determine shift code and schedule times based on business logic
-                start_time = get_time(rec.get('Start Time'))
-                end_time = get_time(rec.get('End Time'))
-                holiday = rec.get('Holiday', '')
-
-                # Check if employee is IoT Operations
+                start_time, end_time, holiday = get_time(rec.get('Start Time')), get_time(rec.get('End Time')), rec.get('Holiday', '')
                 is_iot_operations = emp_info.get('role') == 'IoT Operations'
-
-                # Get schedule data from schedule_shifting table for IoT Operations
-                schedule_in_time = '7:30'  # Default for Developer
-                schedule_out_time = '16:30'  # Default for Developer
-                shift_code = 'N'  # Default
-
+                schedule_in_time, schedule_out_time, shift_code = '7:30', '16:30', 'N'
                 if is_iot_operations:
-                    # Get schedule from schedule_shifting table
                     schedule_table = config.NOCODB_TABLES.get("schedule_shifting")
                     nocodb_schedule = ClsNocoDBProcessor(config.APP_BASE_ID, schedule_table)
-
-                    where_schedule = f"(Employee Name,like,{emp_name.strip().title()})~and(Date,eq,{rec_date.strftime('%Y-%m-%d')})"
-                    schedule_response = nocodb_schedule.get_records(limit=5, where=where_schedule)
+                    emp_numeric_id = emp_info.get('id')
+                    schedule_response = None
+                    if emp_numeric_id:
+                        unique_key = f"{rec_date.strftime('%Y-%m-%d')}_{emp_numeric_id}"
+                        where_schedule = f"(Unique Key,eq,{unique_key})"
+                        schedule_response = nocodb_schedule.get_records(limit=5, where=where_schedule)
                     schedule_records = schedule_response.get('list', []) if schedule_response else []
-
                     if schedule_records:
                         schedule = schedule_records[0]
-                        shift_data = schedule.get('Shift Data', 0)
-
-                        if shift_data == 0:
-                            shift_code = 'Day Off'
-                            schedule_in_time = ''
-                            schedule_out_time = ''
+                        if not schedule.get('Shift Data'):
+                            shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
                         else:
-                            codes = schedule.get('Code', [])
-                            start_times = schedule.get('Start Time', [])
-                            end_times = schedule.get('End Time', [])
-
-                            if codes and start_times and end_times:
-                                shift_code = codes[0] if isinstance(codes, list) else codes
-                                start_time_raw = start_times[0] if isinstance(start_times, list) else start_times
-                                end_time_raw = end_times[0] if isinstance(end_times, list) else end_times
-
-                                schedule_in_time = ':'.join(str(start_time_raw).split(':')[:2]) if start_time_raw else '7:30'
-                                schedule_out_time = ':'.join(str(end_time_raw).split(':')[:2]) if end_time_raw else '16:30'
+                            shift_names, start_times, end_times = schedule.get('Shift Name', []), schedule.get('Start Time', []), schedule.get('End Time', [])
+                            if shift_names and start_times and end_times:
+                                shift_code = shift_names[0] if isinstance(shift_names, list) else shift_names
+                                start_time_raw, end_time_raw = (start_times[0] if isinstance(start_times, list) else start_times), (end_times[0] if isinstance(end_times, list) else end_times)
+                                if 'libur' in shift_code.lower() or str(start_time_raw) == '00:00:00':
+                                    shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+                                else:
+                                    schedule_in_time = ':'.join(str(start_time_raw).split(':')[:2]) if start_time_raw else '7:30'
+                                    schedule_out_time = ':'.join(str(end_time_raw).split(':')[:2]) if end_time_raw else '16:30'
                             else:
-                                shift_code = 'Day Off'
-                                schedule_in_time = ''
-                                schedule_out_time = ''
+                                shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
                     else:
-                        shift_code = 'Day Off'
-                        schedule_in_time = ''
-                        schedule_out_time = ''
+                        shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
                 else:
-                    # For Developer role - use existing logic
                     has_time = start_time or end_time
                     is_holiday = str(holiday).upper() == 'H'
                     shift_code = 'Day Off' if is_holiday or not has_time else 'N'
-
                     if is_holiday or not has_time:
-                        schedule_in_time = ''
-                        schedule_out_time = ''
-
+                        schedule_in_time, schedule_out_time = '', ''
+                
                 csv_data.append({
-                    'Employee ID': emp_info.get('employee_id', emp_info.get('nrp', '')),
-                    'Full Name': emp_name,
-                    'Date': rec_date.strftime('%Y-%m-%d'),
-                    'Shift': shift_code,
-                    'Shift Code': '',  # Not available in basic attendance table
-                    'Shift Label': '',  # Not available in basic attendance table
-                    'Schedule In': schedule_in_time,
-                    'Schedule Out': schedule_out_time,
-                    'Attendance Code': rec.get('Attendance_Code', ''),
-                    'Check In': get_time(rec.get('Start Time')),
-                    'Check Out': get_time(rec.get('End Time')),
-                    'Keterangan': rec.get('Remarks', ''),
-                    'Overtime Check In': get_time(rec.get('Overtime_Check_In')),
-                    'Overtime Check Out': get_time(rec.get('Overtime_Check_Out')),
-                    'Overtime Before': get_time(rec.get('Overtime_Before')),
-                    'Overtime After': get_time(rec.get('Overtime_After')),
-                    'TimeOff Check Out': get_time(rec.get('TimeOff_Check_Out')),
-                    'TimeOff Break Before': get_time(rec.get('TimeOff_Break_Before')),
-                    'TimeOff Break After': get_time(rec.get('TimeOff_Break_After')),
-                    'Holiday Code': rec.get('Holiday', '')
+                    'Employee ID': emp_info.get('employee_id', emp_info.get('nrp', '')), 'Full Name': emp_name, 'Date': rec_date.strftime('%Y-%m-%d'),
+                    'Shift': shift_code, 'Shift Code': '', 'Shift Label': '', 'Schedule In': schedule_in_time, 'Schedule Out': schedule_out_time,
+                    'Attendance Code': rec.get('Attendance_Code', ''), 'Check In': start_time, 'Check Out': end_time, 'Keterangan': rec.get('Remarks', ''),
+                    'Overtime Check In': get_time(rec.get('Overtime_Check_In')), 'Overtime Check Out': get_time(rec.get('Overtime_Check_Out')),
+                    'Overtime Before': get_time(rec.get('Overtime_Before')), 'Overtime After': get_time(rec.get('Overtime_After')),
+                    'TimeOff Check Out': get_time(rec.get('TimeOff_Check_Out')), 'TimeOff Break Before': get_time(rec.get('TimeOff_Break_Before')),
+                    'TimeOff Break After': get_time(rec.get('TimeOff_Break_After')), 'Holiday Code': holiday
                 })
-
-    # Sort by employee name and date
-    csv_data.sort(key=lambda x: (x['Full Name'], x['Date']))
-
-    # Create CSV
+    
     if not csv_data:
         raise HTTPException(status_code=404, detail="No attendance data found for the selected period")
+
+    csv_data.sort(key=lambda x: (x['Full Name'], x['Date']))
 
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=csv_data[0].keys())
@@ -3157,8 +3203,8 @@ async def export_attendance_celerates_csv(
     writer.writerows(csv_data)
 
     filename = f"Attendance_Celerates_{start_date}_to_{end_date}.csv"
-    if employee:
-        filename = f"Attendance_Celerates_{employee}_{start_date}_to_{end_date}.csv"
+    if len(target_employees) == 1 and target_employees[0]:
+        filename = f"Attendance_Celerates_{target_employees[0]}_{start_date}_to_{end_date}.csv"
     elif role_filter and role_filter != "all":
         filename = f"Attendance_Celerates_{role_filter}_{start_date}_to_{end_date}.csv"
 

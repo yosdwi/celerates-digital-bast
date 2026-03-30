@@ -503,20 +503,33 @@
 
         // Bulk Export/Print Functions
         function exportAllEmployeesCSV() {
-            const checkedEmployees = Array.from(document.querySelectorAll('.employee-checkbox:checked'))
-                .map(cb => cb.value);
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/admin/attendance-celerates/export-csv';
 
+            const startDate = document.querySelector('[name="start_date"]').value;
+            const endDate = document.querySelector('[name="end_date"]').value;
+
+            let formContent = `
+                <input type="hidden" name="start_date" value="${startDate}">
+                <input type="hidden" name="end_date" value="${endDate}">
+            `;
+
+            const checkedEmployees = document.querySelectorAll('.employee-checkbox:checked');
+            
             if (checkedEmployees.length === 0) {
-                alert('Please select at least one employee');
+                alert('Please select at least one employee to export.');
                 return;
             }
 
-            // Export each employee separately
-            checkedEmployees.forEach((employeeName, index) => {
-                setTimeout(() => {
-                    exportEmployeeCSV(employeeName);
-                }, index * 500); // Delay to avoid overwhelming the server
+            checkedEmployees.forEach(checkbox => {
+                formContent += `<input type="hidden" name="employee" value="${checkbox.value}">`;
             });
+
+            form.innerHTML = formContent;
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
         }
 
         function exportCombinedCSV() {
