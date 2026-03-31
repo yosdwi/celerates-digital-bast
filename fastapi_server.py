@@ -3112,10 +3112,20 @@ async def export_attendance_celerates_csv(
                         if is_holiday or not has_time:
                             schedule_in_time, schedule_out_time = '', ''
 
+                    # Determine attendance code automatically
+                    attendance_code = ''
+                    if rec:
+                        # Use existing attendance code if available, otherwise auto-generate
+                        existing_code = rec.get('Attendance_Code', '')
+                        if existing_code:
+                            attendance_code = existing_code
+                        elif start_time or end_time:
+                            attendance_code = 'H'  # Hadir (Present)
+
                     employee_csv_data.append({
                         'Employee ID': emp_info.get('employee_id', emp_info.get('nrp', '')), 'Full Name': emp_name, 'Date': current_date.strftime('%Y-%m-%d'),
                         'Shift': shift_code, 'Shift Code': '', 'Shift Label': '', 'Schedule In': schedule_in_time, 'Schedule Out': schedule_out_time,
-                        'Attendance Code': rec.get('Attendance_Code', '') if rec else '', 'Check In': start_time, 'Check Out': end_time, 'Keterangan': rec.get('Remarks', '') if rec else '',
+                        'Attendance Code': attendance_code, 'Check In': start_time, 'Check Out': end_time, 'Keterangan': rec.get('Remarks', '') if rec else '',
                         'Overtime Check In': get_time(rec.get('Overtime_Check_In')) if rec else '', 'Overtime Check Out': get_time(rec.get('Overtime_Check_Out')) if rec else '',
                         'Overtime Before': get_time(rec.get('Overtime_Before')) if rec else '', 'Overtime After': get_time(rec.get('Overtime_After')) if rec else '',
                         'TimeOff Check Out': get_time(rec.get('TimeOff_Check_Out')) if rec else '', 'TimeOff Break Before': get_time(rec.get('TimeOff_Break_Before')) if rec else '',
@@ -3211,10 +3221,20 @@ async def export_attendance_celerates_csv(
                 if is_holiday or not has_time:
                     schedule_in_time, schedule_out_time = '', ''
 
+            # Determine attendance code automatically
+            attendance_code = ''
+            if rec:
+                # Use existing attendance code if available, otherwise auto-generate
+                existing_code = rec.get('Attendance_Code', '')
+                if existing_code:
+                    attendance_code = existing_code
+                elif start_time or end_time:
+                    attendance_code = 'H'  # Hadir (Present)
+
             csv_data.append({
                 'Employee ID': emp_info.get('employee_id', emp_info.get('nrp', '')), 'Full Name': emp_name, 'Date': current_date.strftime('%Y-%m-%d'),
                 'Shift': shift_code, 'Shift Code': '', 'Shift Label': '', 'Schedule In': schedule_in_time, 'Schedule Out': schedule_out_time,
-                'Attendance Code': rec.get('Attendance_Code', '') if rec else '', 'Check In': start_time, 'Check Out': end_time, 'Keterangan': rec.get('Remarks', '') if rec else '',
+                'Attendance Code': attendance_code, 'Check In': start_time, 'Check Out': end_time, 'Keterangan': rec.get('Remarks', '') if rec else '',
                 'Overtime Check In': get_time(rec.get('Overtime_Check_In')) if rec else '', 'Overtime Check Out': get_time(rec.get('Overtime_Check_Out')) if rec else '',
                 'Overtime Before': get_time(rec.get('Overtime_Before')) if rec else '', 'Overtime After': get_time(rec.get('Overtime_After')) if rec else '',
                 'TimeOff Check Out': get_time(rec.get('TimeOff_Check_Out')) if rec else '', 'TimeOff Break Before': get_time(rec.get('TimeOff_Break_Before')) if rec else '',
