@@ -429,7 +429,55 @@ class ClsNocoDBProcessor:
         except Exception as e:
             logging.error(f"Upsert tugas gagal: {e}")
             return None
-    
+
+    def upsert_iot_task(self, task_data: dict, employee_mapping: dict = None):
+        """
+        Upsert IoT task to NocoDB
+        Uses actual Employee ID from employee mapping for consistent unique key generation
+        """
+        try:
+            task_list = task_data.get("Task List", "")
+            date_str = task_data.get("Date")
+            pic_selection = task_data.get("PIC Selection", "")
+
+            if not date_str or not task_list:
+                return None
+
+            # Get actual employee ID (use 'id' field, not 'employee_id')
+            if employee_mapping and pic_selection in employee_mapping:
+                employee_id = str(employee_mapping[pic_selection].get('id'))
+            else:
+                # Fallback for unmapped employees
+                employee_id = pic_selection if pic_selection else "IOT_TEAM"
+
+            # Generate Id Key (Date_EmployeeId)
+            task_data["Id Key"] = self.generate_task_id_key(date_str, employee_id)
+
+            # Generate unique key (Date_EmployeeId_TaskDescription)
+            unique_key = self.generate_task_unique_key(date_str, employee_id, task_list)
+            task_data["Unique Key"] = unique_key
+
+            where_clause = f"(Unique Key,eq,{unique_key})"
+            existing_records = self.get_records(limit=1, where=where_clause)
+
+            if existing_records and existing_records.get('list'):
+                existing_record = existing_records['list'][0]
+                record_id = existing_record['Id']
+                endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
+                payload = {"id": record_id, **task_data}
+
+                update_response = requests.patch(endpoint, headers=self.headers, json=payload, timeout=120)
+                if update_response.status_code in [200, 201]:
+                    return update_response.json()
+                else:
+                    logging.error(f"Update IoT task failed: {update_response.status_code} - {update_response.text}")
+                    return None
+            else:
+                return self.create_record(task_data)
+        except Exception as e:
+            logging.error(f"Upsert IoT task failed: {e}")
+            return None
+
     def upsert_calendar_record(self, calendar_data: dict):
         try:
             date_str = calendar_data.get("Date")

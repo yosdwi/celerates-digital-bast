@@ -20,7 +20,8 @@ services:
     environment:
       - HEALTHCHECK_URL=https://hc-ping.com/c67ead79-ffdd-4517-b360-fa03763a3df6
       - DB_URL=postgresql://celerates-admin:celerates911!!!@postgresql-local-postgre-1:5432/neondb
-    command: ["sleep", "infinity"]
+    command: ["python", "main.py", "--scheduler"]
+    restart: unless-stopped
     networks:
       - digital-bast-network
     deploy:
@@ -28,68 +29,6 @@ services:
         limits:
           cpus: '0.75'
           memory: 512M
-    labels:
-      ofelia.enabled: "true"
-      
-      # ofelia.job-exec.step_01_sync_holidays.schedule: "@hourly"
-      # ofelia.job-exec.step_01_sync_holidays.container: "digital-bast-app"
-      # ofelia.job-exec.step_01_sync_holidays.command: "python main.py --step step_01_sync_holidays"
-
-      # ofelia.job-exec.step_02_process_attendance.schedule: "@hourly"
-      # ofelia.job-exec.step_02_process_attendance.container: "digital-bast-app"
-      # ofelia.job-exec.step_02_process_attendance.command: "python main.py --step step_02_process_attendance"
-      
-      # ofelia.job-exec.step_03_process_redmine_tasks.schedule: "@hourly"
-      # ofelia.job-exec.step_03_process_redmine_tasks.container: "digital-bast-app"
-      # ofelia.job-exec.step_03_process_redmine_tasks.command: "python main.py --step step_03_process_redmine_tasks"
-      
-      # Generate timesheets hourly
-      ofelia.job-exec.step_04_generate_timesheets.schedule: "@hourly" # Runs every hour
-      ofelia.job-exec.step_04_generate_timesheets.container: "digital-bast-app"
-      ofelia.job-exec.step_04_generate_timesheets.command: "python main.py --step step_04_generate_timesheets"
-
-      # # Generate Unique Keys for all tables
-      # ofelia.job-exec.step_05_generate_unique_keys.schedule: "*/5 * * * *" # Runs every 5 minutes
-      # ofelia.job-exec.step_05_generate_unique_keys.container: "digital-bast-app"
-      # ofelia.job-exec.step_05_generate_unique_keys.command: "python main.py --step step_05_generate_unique_keys"
-
-      # ofelia.job-exec.step_05_sync_timesheet_to_gsheet.schedule: "15 */4 * * *" # Runs every 4 hours at minute 15
-      # ofelia.job-exec.step_05_sync_timesheet_to_gsheet.container: "digital-bast-app"
-      # ofelia.job-exec.step_05_sync_timesheet_to_gsheet.command: "python main.py --step step_05_sync_timesheet_to_gsheet"
-
-      # ofelia.job-exec.step_06_sync_attendance_to_gsheet.schedule: "30 */4 * * *" # Runs every 4 hours at minute 30
-      # ofelia.job-exec.step_06_sync_attendance_to_gsheet.container: "digital-bast-app"
-      # ofelia.job-exec.step_06_sync_attendance_to_gsheet.command: "python main.py --step step_06_sync_attendance_to_gsheet"
-
-      # ofelia.job-exec.step_07_process_scheduleshifting.schedule: "0 2 * * *" # Runs daily at 02:00
-      # ofelia.job-exec.step_07_process_scheduleshifting.container: "digital-bast-app"
-      # ofelia.job-exec.step_07_process_scheduleshifting.command: "python main.py --step step_07_process_scheduleshifting"
-
-      # ofelia.job-exec.step_08_send_comment_notifications.schedule: "*/5 * * * *" # Runs every 5 minutes
-      # ofelia.job-exec.step_08_send_comment_notifications.container: "digital-bast-app"
-      # ofelia.job-exec.step_08_send_comment_notifications.command: "python main.py --step step_08_send_comment_notifications"
-
-      # ofelia.job-exec.step_09_send_update_notifications.schedule: "0 */2 * * *" # Runs every 2 hours at minute 0
-      # ofelia.job-exec.step_09_send_update_notifications.container: "digital-bast-app"
-      # ofelia.job-exec.step_09_send_update_notifications.command: "python main.py --step step_09_send_update_notifications"
-
-      # ofelia.job-exec.step_10_archive_timesheet.schedule: "5 1 * * *" # Runs daily at 01:05
-      # ofelia.job-exec.step_10_archive_timesheet.container: "digital-bast-app"
-      # ofelia.job-exec.step_10_archive_timesheet.command: "python main.py --step step_10_archive_timesheet"
-
-  scheduler:
-    image: mcuadros/ofelia:latest
-    container_name: digital-bast-scheduler
-    depends_on:
-      - app
-    command: daemon --docker
-    restart: always
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    labels:
-      # PostgreSQL Backup Job - Production at 22:00 (10 PM)
-      ofelia.job-run.postgres_backup.schedule: "0 22 * * *"
-      ofelia.job-run.postgres_backup.command: "sh /home/debian/script/postgresql/postgres_backup.sh"
 
 # volumes:
   # tinyauth_data:
