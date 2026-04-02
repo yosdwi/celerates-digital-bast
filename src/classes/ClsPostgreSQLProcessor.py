@@ -190,77 +190,97 @@ class ClsPostgreSQLProcessor:
                                 unique_key = self.generate_unique_key(date_str, str(employee_id))
                                 clean_record['Unique Key'] = unique_key
 
-                                update_query = f'''
-                                UPDATE "{self.schema}"."timesheet"
-                                SET "date" = %s, "Calendar_Month" = %s, "activity" = %s,
-                                    "project_name" = %s, "holiday" = %s, "remarks" = %s,
-                                    "ttd" = %s, "IsManualEdit" = %s, "updated_at" = %s
+                                # Check if record exists first
+                                check_query = f'''
+                                SELECT id FROM "{self.schema}"."timesheet"
                                 WHERE "Unique_Key" = %s
                                 '''
+                                cursor.execute(check_query, (unique_key,))
+                                existing_record = cursor.fetchone()
 
-                                update_values = (
-                                    clean_record.get('Date'),
-                                    clean_record.get('Calendar Month'),
-                                    clean_record.get('Activity'),
-                                    clean_record.get('Project Name'),
-                                    clean_record.get('Holiday'),
-                                    clean_record.get('Remarks'),
-                                    clean_record.get('TTD'),
-                                    clean_record.get('IsManualEdit'),
-                                    datetime.now(),
-                                    unique_key
-                                )
+                                if existing_record:
+                                    # Update existing record
+                                    timesheet_id = existing_record[0]
+                                    update_query = f'''
+                                    UPDATE "{self.schema}"."timesheet"
+                                    SET "date" = %s, "Calendar_Month" = %s, "activity" = %s,
+                                        "project_name" = %s, "holiday" = %s, "remarks" = %s,
+                                        "ttd" = %s, "IsManualEdit" = %s, "updated_at" = %s
+                                    WHERE "Unique_Key" = %s
+                                    '''
 
-                                cursor.execute(update_query, update_values)
+                                    update_values = (
+                                        clean_record.get('Date'),
+                                        clean_record.get('Calendar Month'),
+                                        clean_record.get('Activity'),
+                                        clean_record.get('Project Name'),
+                                        clean_record.get('Holiday'),
+                                        clean_record.get('Remarks'),
+                                        clean_record.get('TTD'),
+                                        clean_record.get('IsManualEdit'),
+                                        datetime.now(),
+                                        unique_key
+                                    )
 
-                                # If update successful, also update attendance link
-                                if cursor.rowcount > 0:
-                                    # Get timesheet ID for linking
-                                    cursor.execute(f'SELECT id FROM "{self.schema}"."timesheet" WHERE "Unique_Key" = %s', (unique_key,))
-                                    timesheet_result = cursor.fetchone()
-                                    if timesheet_result:
-                                        timesheet_id = timesheet_result[0]
-                                        attendance_id = record.get("_attendance_id")
-                                        if attendance_id:
-                                            cursor.execute(f'''
-                                                UPDATE "{self.schema}"."Attendance"
-                                                SET "timesheet_id" = %s, "timesheet_id1" = %s
-                                                WHERE id = %s
-                                            ''', (timesheet_id, timesheet_id, attendance_id))
+                                    cursor.execute(update_query, update_values)
 
-                                        # Create Employee linking (M2M) for UPDATE case
-                                        if employee_id:
-                                            cursor.execute(f'''
-                                                INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Employee Data"
-                                                ("Employee Data_id", timesheet_id)
-                                                VALUES (%s, %s)
-                                                ON CONFLICT ("Employee Data_id", timesheet_id) DO NOTHING
-                                            ''', (employee_id, timesheet_id))
+                                    # Update attendance link for existing record
+                                    attendance_id = record.get("_attendance_id")
+                                    if attendance_id:
+                                        cursor.execute(f'''
+                                            UPDATE "{self.schema}"."Attendance"
+                                            SET "timesheet_id" = %s, "timesheet_id1" = %s
+                                            WHERE id = %s
+                                        ''', (timesheet_id, timesheet_id, attendance_id))
 
-                                        # Create Task linking (M2M) for UPDATE case
-                                        task_ids = record.get("_task_ids", [])
-                                        task_field_name = record.get("_task_field_name")
+                                    # Delete existing employee links first
+                                    cursor.execute(f'''
+                                        DELETE FROM "{self.schema}"."_nc_m2m_timesheet_Employee Data"
+                                        WHERE timesheet_id = %s
+                                    ''', (timesheet_id,))
 
-                                        if task_ids and task_field_name:
-                                            for task_id in task_ids[:1]:  # Only link first task
-                                                if task_field_name == "Task List Table":
-                                                    # Developer task
-                                                    cursor.execute(f'''
-                                                        INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Tasklist Develo1"
-                                                        ("Tasklist Developer_id", timesheet_id)
-                                                        VALUES (%s, %s)
-                                                        ON CONFLICT ("Tasklist Developer_id", timesheet_id) DO NOTHING
-                                                    ''', (task_id, timesheet_id))
-                                                elif task_field_name == "Task List IoT Table":
-                                                    # IoT task
-                                                    cursor.execute(f'''
-                                                        INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Tasklist IoT Op"
-                                                        ("Tasklist IoT Operations_id", timesheet_id)
-                                                        VALUES (%s, %s)
-                                                        ON CONFLICT ("Tasklist IoT Operations_id", timesheet_id) DO NOTHING
-                                                    ''', (task_id, timesheet_id))
+                                    # Create Employee linking (M2M) for UPDATE case
+                                    if employee_id:
+                                        cursor.execute(f'''
+                                            INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Employee Data"
+                                            ("Employee Data_id", timesheet_id)
+                                            VALUES (%s, %s)
+                                        ''', (employee_id, timesheet_id))
 
-                                if cursor.rowcount == 0:
+                                    # Delete existing task links first
+                                    cursor.execute(f'''
+                                        DELETE FROM "{self.schema}"."_nc_m2m_timesheet_Tasklist Develo1"
+                                        WHERE timesheet_id = %s
+                                    ''', (timesheet_id,))
+                                    cursor.execute(f'''
+                                        DELETE FROM "{self.schema}"."_nc_m2m_timesheet_Tasklist IoT Op"
+                                        WHERE timesheet_id = %s
+                                    ''', (timesheet_id,))
+
+                                    # Create Task linking (M2M) for UPDATE case
+                                    task_ids = record.get("_task_ids", [])
+                                    task_field_name = record.get("_task_field_name")
+
+                                    if task_ids and task_field_name:
+                                        for task_id in task_ids[:1]:  # Only link first task
+                                            if task_field_name == "Task List Table":
+                                                # Developer task
+                                                cursor.execute(f'''
+                                                    INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Tasklist Develo1"
+                                                    ("Tasklist Developer_id", timesheet_id)
+                                                    VALUES (%s, %s)
+                                                ''', (task_id, timesheet_id))
+                                            elif task_field_name == "Task List IoT Table":
+                                                # IoT task
+                                                cursor.execute(f'''
+                                                    INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Tasklist IoT Op"
+                                                    ("Tasklist IoT Operations_id", timesheet_id)
+                                                    VALUES (%s, %s)
+                                                ''', (task_id, timesheet_id))
+
+                                else:
+
+                                    # Insert new record
                                     insert_query = f'''
                                     INSERT INTO "{self.schema}"."timesheet"
                                     ("date", "Calendar_Month", "activity", "project_name",
@@ -283,50 +303,48 @@ class ClsPostgreSQLProcessor:
 
                                     cursor.execute(insert_query, insert_values)
 
-                                # Get the inserted timesheet ID
-                                cursor.execute(f'SELECT id FROM "{self.schema}"."timesheet" WHERE "Unique_Key" = %s', (unique_key,))
-                                timesheet_id = cursor.fetchone()[0]
+                                    # Get the inserted timesheet ID
+                                    cursor.execute(f'SELECT id FROM "{self.schema}"."timesheet" WHERE "Unique_Key" = %s', (unique_key,))
+                                    timesheet_id = cursor.fetchone()[0]
 
-                                # Update attendance record to link to this timesheet
-                                attendance_id = record.get("_attendance_id")
-                                if attendance_id:
-                                    cursor.execute(f'''
-                                        UPDATE "{self.schema}"."Attendance"
-                                        SET "timesheet_id" = %s, "timesheet_id1" = %s
-                                        WHERE id = %s
-                                    ''', (timesheet_id, timesheet_id, attendance_id))
+                                    # Update attendance record to link to this timesheet
+                                    attendance_id = record.get("_attendance_id")
+                                    if attendance_id:
+                                        cursor.execute(f'''
+                                            UPDATE "{self.schema}"."Attendance"
+                                            SET "timesheet_id" = %s, "timesheet_id1" = %s
+                                            WHERE id = %s
+                                        ''', (timesheet_id, timesheet_id, attendance_id))
 
-                                # Create Employee linking (M2M)
-                                if employee_id:
-                                    cursor.execute(f'''
-                                        INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Employee Data"
-                                        ("Employee Data_id", timesheet_id)
-                                        VALUES (%s, %s)
-                                        ON CONFLICT ("Employee Data_id", timesheet_id) DO NOTHING
-                                    ''', (employee_id, timesheet_id))
+                                    # Create Employee linking (M2M)
+                                    if employee_id:
+                                        cursor.execute(f'''
+                                            INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Employee Data"
+                                            ("Employee Data_id", timesheet_id)
+                                            VALUES (%s, %s)
+                                        ''', (employee_id, timesheet_id))
 
-                                # Create Task linking (M2M) based on employee role
-                                task_ids = record.get("_task_ids", [])
-                                task_field_name = record.get("_task_field_name")
+                                    # Create Task linking (M2M) based on employee role
+                                    task_ids = record.get("_task_ids", [])
+                                    task_field_name = record.get("_task_field_name")
 
-                                if task_ids and task_field_name:
-                                    for task_id in task_ids[:1]:  # Only link first task
-                                        if task_field_name == "Task List Table":
-                                            # Developer task
-                                            cursor.execute(f'''
-                                                INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Tasklist Develo1"
-                                                ("Tasklist Developer_id", timesheet_id)
-                                                VALUES (%s, %s)
-                                                ON CONFLICT ("Tasklist Developer_id", timesheet_id) DO NOTHING
-                                            ''', (task_id, timesheet_id))
-                                        elif task_field_name == "Task List IoT Table":
-                                            # IoT task
-                                            cursor.execute(f'''
-                                                INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Tasklist IoT Op"
-                                                ("Tasklist IoT Operations_id", timesheet_id)
-                                                VALUES (%s, %s)
-                                                ON CONFLICT ("Tasklist IoT Operations_id", timesheet_id) DO NOTHING
-                                            ''', (task_id, timesheet_id))
+                                    if task_ids and task_field_name:
+                                        for task_id in task_ids[:1]:  # Only link first task
+                                            if task_field_name == "Task List Table":
+                                                # Developer task
+                                                cursor.execute(f'''
+                                                    INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Tasklist Develo1"
+                                                    ("Tasklist Developer_id", timesheet_id)
+                                                    VALUES (%s, %s)
+                                                ''', (task_id, timesheet_id))
+                                            elif task_field_name == "Task List IoT Table":
+                                                # IoT task
+                                                cursor.execute(f'''
+                                                    INSERT INTO "{self.schema}"."_nc_m2m_timesheet_Tasklist IoT Op"
+                                                    ("Tasklist IoT Operations_id", timesheet_id)
+                                                    VALUES (%s, %s)
+                                                ''', (task_id, timesheet_id))
+
 
                                 batch_success += 1
 
