@@ -23,6 +23,7 @@
             width: 100%;
             border-collapse: collapse;
             font-size: 12px;
+            table-layout: fixed;
         }
         .dev-kualitas-section th {
             background-color: #9BB5D6;
@@ -33,6 +34,14 @@
             border: 1px solid #000;
             vertical-align: middle;
         }
+        .dev-kualitas-section th:nth-child(1) { width: 5%; }  /* No */
+        .dev-kualitas-section th:nth-child(2) { width: 25%; } /* Task List */
+        .dev-kualitas-section th:nth-child(3) { width: 15%; } /* Requestor */
+        .dev-kualitas-section th:nth-child(4) { width: 15%; } /* PIC */
+        .dev-kualitas-section th:nth-child(5) { width: 10%; } /* Status */
+        .dev-kualitas-section th:nth-child(6) { width: 10%; } /* Start Date */
+        .dev-kualitas-section th:nth-child(7) { width: 10%; } /* End Date */
+        .dev-kualitas-section th:nth-child(8) { width: 10%; } /* Pencapaian */
         .dev-kualitas-section td {
             padding: 8px;
             border: 1px solid #000;
