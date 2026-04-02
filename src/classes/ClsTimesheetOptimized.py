@@ -132,8 +132,6 @@ class ClsTimesheetOptimized:
 
                 records = cursor.fetchall()
 
-                print("ini record schedule", records)
-
                 lookup = {}
                 for record in records:
                     key = record.get('Unique_Key')
