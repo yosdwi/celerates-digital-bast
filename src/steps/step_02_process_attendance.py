@@ -11,14 +11,17 @@ def run():
     
     employee_table_id = config.NOCODB_TABLES.get("employee_data")
     attendance_table_id = config.NOCODB_TABLES.get("attendance")
+    attendance_raw_table_id = config.NOCODB_TABLES.get("attendance_raw")
     if not all([employee_table_id, attendance_table_id]):
         raise ValueError("Attendance table ID is missing.")
 
     attendance_db = ClsAttendance()
     nocodb_employee = ClsNocoDBProcessor(config.APP_BASE_ID, employee_table_id)
     nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table_id)
+    nocodb_attendance_raw = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_raw_table_id) if attendance_raw_table_id else None
     
     all_records_to_create = []
+    all_raw_records_to_create = []
 
     try:
         if not attendance_db.connect():
@@ -58,14 +61,18 @@ def run():
                     record["End Time"] = f"{formatted_date} {row['End Time']}:00"
                 
                 all_records_to_create.append(record)
+                all_raw_records_to_create.append(record.copy())
         
         if not all_records_to_create:
             print("No attendance records found to process")
             return
             
         success_count = sum(1 for r in all_records_to_create if nocodb_attendance.upsert_attendance(r))
-        
         print(f"Successfully upserted {success_count}/{len(all_records_to_create)} records.")
+
+        if nocodb_attendance_raw:
+            raw_success_count = sum(1 for r in all_raw_records_to_create if nocodb_attendance_raw.upsert_attendance(r))
+            print(f"Successfully upserted {raw_success_count}/{len(all_raw_records_to_create)} raw records.")
         if success_count < len(all_records_to_create):
             pass
 

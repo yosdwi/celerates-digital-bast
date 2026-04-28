@@ -37,8 +37,8 @@ templates = Jinja2Templates(directory="templates")
 # SQLite database for generation plans
 DB_PATH = "generation_plans.db"
 
-# Global cache for Fauzan's timesheet data
-fauzan_timesheet_cache = None
+# Global cache for Tama's timesheet data
+tama_timesheet_cache = None
 
 def init_db():
     """Initialize SQLite database for generation plans"""
@@ -704,8 +704,8 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
     else:
         nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
-        # Use Month filter and Unique_Key ending with _100 for Fauzan's tasks
-        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%100)"
+        # Use Month filter and Unique_Key ending with _95 for Tama's tasks
+        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%95)"
         response = nocodb.get_records(limit=2000, where=where_clause)
         records_data = response.get('list', []) if response else []
 
@@ -748,7 +748,7 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
                 "tanggal_penyelesaian": formatted_end,
                 "lead_time": "8 Jam",  # Hardcoded as requested
                 "requestor_pic": requestor,
-                "engineer_manage": "Muhammad Fauzan Acyuto"
+                "engineer_manage": "Muhammad Putra Tama Bayu Hargio"
             })
 
     # Render template
@@ -1693,8 +1693,8 @@ async def _calculate_iot_tasklist_pages(section_type: str, month: int) -> int:
                     9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
                 }
                 month_name = month_names.get(month, 'Januari')
-                # Same filter as _generate_iot_aktivitas_page - Fauzan's tasks with _100
-                where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%100)"
+                # Same filter as _generate_iot_aktivitas_page - Tama's tasks with _95
+                where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%95)"
             else:  # problem section
                 # For "problem" and "aktivitas", use IoT tasklist data with section-specific logic
                 table_id = config.NOCODB_TABLES.get("tasklist_iot")
@@ -2295,11 +2295,11 @@ async def _get_timesheet_html_sections(month: int, year: int, report_type: str, 
             single_employee_data = await _generate_single_employee_timesheet(name, info, month, year)
 
             if single_employee_data and single_employee_data.get('timesheet_rows'):
-                # Cache Fauzan's timesheet data globally
-                if "Fauzan" in name or "FAUZAN" in name.upper():
-                    global fauzan_timesheet_cache
-                    fauzan_timesheet_cache = single_employee_data
-                    print(f"DEBUG: Cached Fauzan timesheet data with {len(single_employee_data.get('timesheet_rows', []))} rows")
+                # Cache Tama's timesheet data globally
+                if "Tama" in name or "TAMA" in name.upper():
+                    global tama_timesheet_cache
+                    tama_timesheet_cache = single_employee_data
+                    print(f"DEBUG: Cached Tama timesheet data with {len(single_employee_data.get('timesheet_rows', []))} rows")
 
                 html_content = await _render_single_timesheet_html(single_employee_data, request)
                 timesheet_htmls.append({
@@ -2750,7 +2750,7 @@ async def _get_attendance_html_section(month: int, year: int, report_type: str, 
     employee_mapping = _filter_employees_by_type(all_employees, report_type)
 
     # Setup attendance data processor
-    attendance_table = config.NOCODB_TABLES.get("attendance")
+    attendance_table = config.NOCODB_TABLES.get("attendance_raw")
     nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
     start_date, end_date = get_dynamic_month_dates(year, month)
 
