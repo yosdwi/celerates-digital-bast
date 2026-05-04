@@ -705,7 +705,7 @@ async def _generate_iot_aktivitas_page(request: Request, records: list, month_na
         nocodb = ClsNocoDBProcessor(config.APP_BASE_ID, table_id)
 
         # Use Month filter and Unique_Key ending with _95 for Tama's tasks
-        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%95)"
+        where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%95%)"
         response = nocodb.get_records(limit=2000, where=where_clause)
         records_data = response.get('list', []) if response else []
 
@@ -1694,7 +1694,7 @@ async def _calculate_iot_tasklist_pages(section_type: str, month: int) -> int:
                 }
                 month_name = month_names.get(month, 'Januari')
                 # Same filter as _generate_iot_aktivitas_page - Tama's tasks with _95
-                where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%95)"
+                where_clause = f"(Month,eq,{month_name})~and(Status,eq,Closed)~and(Unique Key,like,%95%)"
             else:  # problem section
                 # For "problem" and "aktivitas", use IoT tasklist data with section-specific logic
                 table_id = config.NOCODB_TABLES.get("tasklist_iot")
