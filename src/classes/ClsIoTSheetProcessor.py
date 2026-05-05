@@ -1,5 +1,6 @@
 import pandas as pd
 import logging
+import socket
 import time
 import random
 from datetime import datetime
@@ -28,8 +29,17 @@ class ClsIoTSheetProcessor:
                     time.sleep(delay)
                 else:
                     raise e
+            except (socket.timeout, TimeoutError) as e:
+                if attempt < max_retries - 1:
+                    delay = (2 ** attempt) * 3 + random.uniform(2, 4)
+                    logging.warning(f"Timeout, retrying in {delay:.1f}s: {e}")
+                    time.sleep(delay)
+                else:
+                    raise e
             except Exception as e:
-                if "SSL" in str(e) or "connection" in str(e).lower() and attempt < max_retries - 1:
+                msg = str(e).lower()
+                is_transient = "ssl" in msg or "connection" in msg or "timed out" in msg or "timeout" in msg
+                if is_transient and attempt < max_retries - 1:
                     delay = (2 ** attempt) * 3 + random.uniform(2, 4)
                     logging.warning(f"Connection error, retrying in {delay:.1f}s: {e}")
                     time.sleep(delay)
