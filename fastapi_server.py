@@ -3028,6 +3028,11 @@ async def attendance_celerates_dashboard_post(
                 if rec_date_str:
                     attendance_by_date[rec_date_str] = rec
 
+            # Pull Keterangan from Timesheet.Remarks (matches the CSV export source)
+            timesheet_remarks_by_date = _get_timesheet_remarks_by_date(
+                emp_name, start_date_obj, end_date_obj
+            )
+
             # Generate all dates in range
             current_date = start_date_obj
             while current_date <= end_date_obj:
@@ -3043,15 +3048,17 @@ async def attendance_celerates_dashboard_post(
                     time_str = str(actual_val)
                     return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
 
+                keterangan = timesheet_remarks_by_date.get(date_str, '')
+
                 if rec is None:
-                    last_modified, is_manual_edit, start_time, end_time, holiday, attendance_code, keterangan = '', False, '', '', '', '', ''
+                    last_modified, is_manual_edit, start_time, end_time, holiday, attendance_code = '', False, '', '', '', ''
                     overtime_fields = {'overtime_check_in': '', 'overtime_check_out': '', 'overtime_before': '', 'overtime_after': ''}
                     timeoff_fields = {'timeoff_check_out': '', 'timeoff_break_before': '', 'timeoff_break_after': ''}
                 else:
                     last_modified = rec.get('Last Modified', '')
                     is_manual_edit = '@system.com' not in str(last_modified) if last_modified else False
                     start_time, end_time = get_time(rec.get('Start Time')), get_time(rec.get('End Time'))
-                    holiday, attendance_code, keterangan = rec.get('Holiday', ''), rec.get('Attendance_Code', ''), rec.get('Remarks', '')
+                    holiday, attendance_code = rec.get('Holiday', ''), rec.get('Attendance_Code', '')
                     overtime_fields = {
                         'overtime_check_in': get_time(rec.get('Overtime_Check_In')),
                         'overtime_check_out': get_time(rec.get('Overtime_Check_Out')),
