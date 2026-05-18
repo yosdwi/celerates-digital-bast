@@ -1551,7 +1551,8 @@ async def generate_plan(
         })
         section_id += 1
 
-        # Attendance section (one per employee) + Day Off evidence page after each employee
+        # Attendance section (one per employee) + Day Off evidence page only when
+        # the employee actually has day-off evidence attachments in the period.
         attendance_counter = 1
         for emp_name, emp_info in employee_mapping.items():
             sections_plan.append({
@@ -1563,15 +1564,15 @@ async def generate_plan(
             })
             section_id += 1
 
-            # Day Off attendance evidence page (placed after each employee's 1PAMA log)
-            sections_plan.append({
-                "id": section_id,
-                "type": "attendance_evidence",
-                "title": f"4.{attendance_counter}.1. Evidence Day Off - {emp_name}",
-                "employee_name": emp_name,
-                "status": "pending"
-            })
-            section_id += 1
+            if _collect_day_off_evidence(emp_name, month, current_year):
+                sections_plan.append({
+                    "id": section_id,
+                    "type": "attendance_evidence",
+                    "title": f"4.{attendance_counter}.1. Evidence Day Off - {emp_name}",
+                    "employee_name": emp_name,
+                    "status": "pending"
+                })
+                section_id += 1
             attendance_counter += 1
 
         # Store plan in SQLite database
@@ -2166,11 +2167,74 @@ async def _generate_single_employee_attendance(employee_name: str, employee_mapp
         return None
 
 
+def _collect_day_off_evidence(employee_name: str, month: int, year: int) -> list:
+    """Return a list of day-off evidence items (with image_path) for the given employee/period.
+
+    Returns [] when the employee has no day-off attendance with attached evidence.
+    """
+    try:
+        attendance_table = config.NOCODB_TABLES.get("attendance")
+        if not attendance_table:
+            return []
+        nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
+        start_date, end_date = get_dynamic_month_dates(year, month)
+
+        where_clause = f"(Name,like,%{employee_name.strip().title()}%)"
+        response = nocodb_attendance.get_records(limit=2000, where=where_clause)
+        records = response.get('list', []) if response else []
+    except Exception as e:
+        print(f"Error fetching day-off evidence for {employee_name}: {e}")
+        return []
+
+    evidence_data = []
+    counter = 1
+    for record in records:
+        rec_date_str = record.get('Date')
+        if not rec_date_str:
+            continue
+        try:
+            rec_date = datetime.strptime(rec_date_str, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            continue
+        if not (start_date.date() <= rec_date <= end_date.date()):
+            continue
+
+        # Day-off detection: Holiday flag = 'H' OR no Start/End Time
+        holiday_flag = str(record.get('Holiday', '')).strip().upper()
+        start_time = record.get('Start Time')
+        end_time = record.get('End Time')
+        is_day_off = holiday_flag == 'H' or not (start_time or end_time)
+        if not is_day_off:
+            continue
+
+        attachments = record.get('Evidence')
+        if not attachments or not isinstance(attachments, list):
+            continue
+
+        for attachment in attachments:
+            if not isinstance(attachment, dict):
+                continue
+            signed_path = attachment.get('signedPath')
+            if not signed_path:
+                continue
+            full_url = f"{config.NOCODB_BASE_URL.rstrip('/')}/{signed_path}"
+            evidence_data.append({
+                "number": counter,
+                "title": rec_date.strftime('%d/%m/%Y'),
+                "image_path": full_url,
+                "description": rec_date.strftime('%d/%m/%Y')
+            })
+            counter += 1
+
+    return evidence_data
+
+
 async def _generate_single_attendance_evidence_section(employee_name: str, month: int, year: int, report_type: str, request: Request):
     """Generate Day Off attendance evidence page for single employee.
 
     Placed after the employee's 1PAMA attendance log. Uses the evidence_aktivitas.html
-    template format with a header that shows the employee's name.
+    template format with a header that shows the employee's name. Returns None when
+    the employee has no day-off evidence so the page isn't rendered.
     """
     try:
         all_employees = await _get_employee_data_cached()
@@ -2179,63 +2243,9 @@ async def _generate_single_attendance_evidence_section(employee_name: str, month
         if employee_name not in employee_mapping:
             return None
 
-        emp_info = employee_mapping[employee_name]
-
-        attendance_table = config.NOCODB_TABLES.get("attendance")
-        nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
-        start_date, end_date = get_dynamic_month_dates(year, month)
-
-        where_clause = f"(Name,like,%{employee_name.strip().title()}%)"
-        response = nocodb_attendance.get_records(limit=2000, where=where_clause)
-        records = response.get('list', []) if response else []
-
-        # Collect day-off records with evidence attachments
-        evidence_data = []
-        counter = 1
-        for record in records:
-            rec_date_str = record.get('Date')
-            if not rec_date_str:
-                continue
-            try:
-                rec_date = datetime.strptime(rec_date_str, '%Y-%m-%d').date()
-            except (ValueError, TypeError):
-                continue
-            if not (start_date.date() <= rec_date <= end_date.date()):
-                continue
-
-            # Day-off detection: Holiday flag = 'H' OR no Start/End Time
-            holiday_flag = str(record.get('Holiday', '')).strip().upper()
-            start_time = record.get('Start Time')
-            end_time = record.get('End Time')
-            is_day_off = holiday_flag == 'H' or not (start_time or end_time)
-            if not is_day_off:
-                continue
-
-            # Look for attached evidence on the attendance record (try a few common field names)
-            attachments = None
-            for field_name in ('Evidence', 'Evidence Day Off', 'Attachment', 'Attachments', 'Bukti', 'Photo'):
-                val = record.get(field_name)
-                if val:
-                    attachments = val
-                    break
-
-            if not attachments or not isinstance(attachments, list):
-                continue
-
-            for attachment in attachments:
-                if not isinstance(attachment, dict):
-                    continue
-                signed_path = attachment.get('signedPath')
-                if not signed_path:
-                    continue
-                full_url = f"{config.NOCODB_BASE_URL.rstrip('/')}/{signed_path}"
-                evidence_data.append({
-                    "number": counter,
-                    "title": rec_date.strftime('%d/%m/%Y'),
-                    "image_path": full_url,
-                    "description": rec_date.strftime('%d/%m/%Y')
-                })
-                counter += 1
+        evidence_data = _collect_day_off_evidence(employee_name, month, year)
+        if not evidence_data:
+            return None
 
         template = templates.get_template('evidence/evidence_aktivitas.html')
         html_content = template.render({
@@ -2248,7 +2258,7 @@ async def _generate_single_attendance_evidence_section(employee_name: str, month
         body_content = re.search(r'<body[^>]*>(.*?)</body>', html_content, re.DOTALL)
         inner_html = body_content.group(1) if body_content else html_content
 
-        # Wrap with a header that shows the employee's name (per BAST format requirement)
+        # Wrap with a header showing the employee's name (per BAST format requirement)
         header_html = (
             '<div class="evidence-employee-header" '
             'style="text-align:center;font-family:Arial,sans-serif;font-size:20px;'
@@ -2257,12 +2267,6 @@ async def _generate_single_attendance_evidence_section(employee_name: str, month
             f'Evidence Day Off - {employee_name.upper()}'
             '</div>'
         )
-
-        if not evidence_data:
-            inner_html = (
-                '<div style="text-align:center;color:#666;font-family:Arial,sans-serif;'
-                'padding:30px;">Tidak ada evidence day off untuk periode ini.</div>'
-            )
 
         isolated_content = f'<div class="evidence-section attendance-evidence-section">{header_html}{inner_html}</div>'
 
