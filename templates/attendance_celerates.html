@@ -462,6 +462,7 @@
                 <input type="hidden" name="end_date" value="${endDate}">
                 <input type="hidden" name="employee" value="${employeeName}">
                 <input type="hidden" name="role_filter" value="">
+                <input type="hidden" name="export_mode" value="separate">
             `;
 
             document.body.appendChild(form);
@@ -513,10 +514,11 @@
             let formContent = `
                 <input type="hidden" name="start_date" value="${startDate}">
                 <input type="hidden" name="end_date" value="${endDate}">
+                <input type="hidden" name="export_mode" value="separate">
             `;
 
             const checkedEmployees = document.querySelectorAll('.employee-checkbox:checked');
-            
+
             if (checkedEmployees.length === 0) {
                 alert('Please select at least one employee to export.');
                 return;
@@ -540,13 +542,21 @@
             exportForm.method = 'POST';
             exportForm.action = '/admin/attendance-celerates/export-csv';
 
-            exportForm.innerHTML = `
+            let formContent = `
                 <input type="hidden" name="start_date" value="${formData.get('start_date')}">
                 <input type="hidden" name="end_date" value="${formData.get('end_date')}">
-                <input type="hidden" name="employee" value="">
                 <input type="hidden" name="role_filter" value="${document.getElementById('roleFilter').value}">
+                <input type="hidden" name="export_mode" value="combined">
             `;
 
+            // Pass the same selected employees as the All Separate button so the user's
+            // current selection drives both modes consistently.
+            const checkedEmployees = document.querySelectorAll('.employee-checkbox:checked');
+            checkedEmployees.forEach(checkbox => {
+                formContent += `<input type="hidden" name="employee" value="${checkbox.value}">`;
+            });
+
+            exportForm.innerHTML = formContent;
             document.body.appendChild(exportForm);
             exportForm.submit();
             document.body.removeChild(exportForm);

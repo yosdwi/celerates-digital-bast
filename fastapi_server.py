@@ -1551,13 +1551,23 @@ async def generate_plan(
         })
         section_id += 1
 
-        # Attendance section (one per employee)
+        # Attendance section (one per employee) + Day Off evidence page after each employee
         attendance_counter = 1
         for emp_name, emp_info in employee_mapping.items():
             sections_plan.append({
                 "id": section_id,
                 "type": "attendance",
                 "title": f"4.{attendance_counter}. Attendance - {emp_name}",
+                "employee_name": emp_name,
+                "status": "pending"
+            })
+            section_id += 1
+
+            # Day Off attendance evidence page (placed after each employee's 1PAMA log)
+            sections_plan.append({
+                "id": section_id,
+                "type": "attendance_evidence",
+                "title": f"4.{attendance_counter}.1. Evidence Day Off - {emp_name}",
                 "employee_name": emp_name,
                 "status": "pending"
             })
@@ -1821,6 +1831,13 @@ async def _generate_section_logic(request: Request, section_id: int, plan_id: st
 
         elif section["type"] == "attendance":
             section_content = await _generate_single_attendance_section(
+                section["employee_name"], plan["month"], plan["year"], plan["type"], request
+            )
+            if section_content:
+                section_content["title"] = section["title"]  # Use plan title
+
+        elif section["type"] == "attendance_evidence":
+            section_content = await _generate_single_attendance_evidence_section(
                 section["employee_name"], plan["month"], plan["year"], plan["type"], request
             )
             if section_content:
@@ -2146,6 +2163,118 @@ async def _generate_single_employee_attendance(employee_name: str, employee_mapp
 
     except Exception as e:
         print(f"Error generating attendance for {employee_name}: {e}")
+        return None
+
+
+async def _generate_single_attendance_evidence_section(employee_name: str, month: int, year: int, report_type: str, request: Request):
+    """Generate Day Off attendance evidence page for single employee.
+
+    Placed after the employee's 1PAMA attendance log. Uses the evidence_aktivitas.html
+    template format with a header that shows the employee's name.
+    """
+    try:
+        all_employees = await _get_employee_data_cached()
+        employee_mapping = _filter_employees_by_type(all_employees, report_type)
+
+        if employee_name not in employee_mapping:
+            return None
+
+        emp_info = employee_mapping[employee_name]
+
+        attendance_table = config.NOCODB_TABLES.get("attendance")
+        nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
+        start_date, end_date = get_dynamic_month_dates(year, month)
+
+        where_clause = f"(Name,like,%{employee_name.strip().title()}%)"
+        response = nocodb_attendance.get_records(limit=2000, where=where_clause)
+        records = response.get('list', []) if response else []
+
+        # Collect day-off records with evidence attachments
+        evidence_data = []
+        counter = 1
+        for record in records:
+            rec_date_str = record.get('Date')
+            if not rec_date_str:
+                continue
+            try:
+                rec_date = datetime.strptime(rec_date_str, '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                continue
+            if not (start_date.date() <= rec_date <= end_date.date()):
+                continue
+
+            # Day-off detection: Holiday flag = 'H' OR no Start/End Time
+            holiday_flag = str(record.get('Holiday', '')).strip().upper()
+            start_time = record.get('Start Time')
+            end_time = record.get('End Time')
+            is_day_off = holiday_flag == 'H' or not (start_time or end_time)
+            if not is_day_off:
+                continue
+
+            # Look for attached evidence on the attendance record (try a few common field names)
+            attachments = None
+            for field_name in ('Evidence', 'Evidence Day Off', 'Attachment', 'Attachments', 'Bukti', 'Photo'):
+                val = record.get(field_name)
+                if val:
+                    attachments = val
+                    break
+
+            if not attachments or not isinstance(attachments, list):
+                continue
+
+            for attachment in attachments:
+                if not isinstance(attachment, dict):
+                    continue
+                signed_path = attachment.get('signedPath')
+                if not signed_path:
+                    continue
+                full_url = f"{config.NOCODB_BASE_URL.rstrip('/')}/{signed_path}"
+                evidence_data.append({
+                    "number": counter,
+                    "title": rec_date.strftime('%d/%m/%Y'),
+                    "image_path": full_url,
+                    "description": rec_date.strftime('%d/%m/%Y')
+                })
+                counter += 1
+
+        template = templates.get_template('evidence/evidence_aktivitas.html')
+        html_content = template.render({
+            "request": request,
+            "evidence_data": evidence_data,
+            "type": report_type,
+            "month": _get_month_name(month)
+        })
+
+        body_content = re.search(r'<body[^>]*>(.*?)</body>', html_content, re.DOTALL)
+        inner_html = body_content.group(1) if body_content else html_content
+
+        # Wrap with a header that shows the employee's name (per BAST format requirement)
+        header_html = (
+            '<div class="evidence-employee-header" '
+            'style="text-align:center;font-family:Arial,sans-serif;font-size:20px;'
+            'font-weight:bold;margin:20px 0 30px 0;padding-bottom:12px;'
+            'border-bottom:2px solid #000;text-transform:uppercase;letter-spacing:0.5px;">'
+            f'Evidence Day Off - {employee_name.upper()}'
+            '</div>'
+        )
+
+        if not evidence_data:
+            inner_html = (
+                '<div style="text-align:center;color:#666;font-family:Arial,sans-serif;'
+                'padding:30px;">Tidak ada evidence day off untuk periode ini.</div>'
+            )
+
+        isolated_content = f'<div class="evidence-section attendance-evidence-section">{header_html}{inner_html}</div>'
+
+        return {
+            'type': 'attendance_evidence',
+            'title': f'Evidence Day Off - {employee_name}',
+            'employee_name': str(employee_name),
+            'content': str(isolated_content)
+        }
+
+    except Exception as e:
+        print(f"Error generating day off evidence for {employee_name}: {e}")
         return None
 
 
@@ -2997,252 +3126,258 @@ async def attendance_celerates_dashboard_post(
         "selected_employees": employee if employee else [], "datetime": datetime
     })
 
+def _get_timesheet_remarks_by_date(emp_name: str, start_date_obj, end_date_obj) -> dict:
+    """Fetch Timesheet Remarks for an employee within the date range, keyed by 'YYYY-MM-DD'."""
+    timesheet_table_id = config.NOCODB_TABLES.get("timesheet")
+    if not timesheet_table_id:
+        return {}
+    try:
+        nocodb_timesheet = ClsNocoDBProcessor(config.APP_BASE_ID, timesheet_table_id)
+        where = f"(Employee Name,like,%{emp_name.strip()}%)"
+        response = nocodb_timesheet.get_records(limit=2000, where=where)
+        records = response.get('list', []) if response else []
+    except Exception as e:
+        print(f"Error fetching timesheet remarks for {emp_name}: {e}")
+        return {}
+
+    remarks_by_date = {}
+    for r in records:
+        date_val = r.get('Date')
+        if not date_val:
+            continue
+        try:
+            rec_date = datetime.strptime(date_val, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            continue
+        if start_date_obj <= rec_date <= end_date_obj:
+            remark = r.get('Remarks', '')
+            if remark:
+                remarks_by_date[date_val] = remark
+    return remarks_by_date
+
+
+def _build_employee_attendance_rows(emp_name: str, emp_info: dict, start_date_obj, end_date_obj, nocodb_attendance):
+    """Generate per-date attendance rows for one employee. Keterangan comes from Timesheet.Remarks."""
+    def get_time(val):
+        if not val: return ''
+        actual_val = val[0] if isinstance(val, list) else val
+        if actual_val is None or str(actual_val).strip() == '': return ''
+        time_str = str(actual_val)
+        return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
+
+    where_clause = f"(Name,like,%{emp_name.strip().title()}%)"
+    response = nocodb_attendance.get_records(limit=2000, where=where_clause)
+    attendance_records = response.get('list', []) if response else []
+
+    attendance_by_date = {}
+    for rec in attendance_records:
+        rec_date_str = rec.get('Date')
+        if rec_date_str:
+            attendance_by_date[rec_date_str] = rec
+
+    timesheet_remarks_by_date = _get_timesheet_remarks_by_date(emp_name, start_date_obj, end_date_obj)
+
+    is_iot_operations = emp_info.get('role') == 'IoT Operations'
+    nocodb_schedule = None
+    if is_iot_operations:
+        schedule_table = config.NOCODB_TABLES.get("schedule_shifting")
+        if schedule_table:
+            nocodb_schedule = ClsNocoDBProcessor(config.APP_BASE_ID, schedule_table)
+
+    rows = []
+    current_date = start_date_obj
+    while current_date <= end_date_obj:
+        date_str = current_date.strftime('%Y-%m-%d')
+        rec = attendance_by_date.get(date_str)
+
+        start_time = get_time(rec.get('Start Time')) if rec else ''
+        end_time = get_time(rec.get('End Time')) if rec else ''
+        holiday = rec.get('Holiday', '') if rec else ''
+
+        schedule_in_time, schedule_out_time, shift_code = '7:30', '16:30', 'N'
+
+        if is_iot_operations and nocodb_schedule is not None:
+            emp_numeric_id = emp_info.get('id')
+            schedule_records = []
+            if emp_numeric_id:
+                unique_key = f"{date_str}_{emp_numeric_id}"
+                where_schedule = f"(Unique Key,eq,{unique_key})"
+                schedule_response = nocodb_schedule.get_records(limit=5, where=where_schedule)
+                schedule_records = schedule_response.get('list', []) if schedule_response else []
+            if schedule_records:
+                schedule = schedule_records[0]
+                if not schedule.get('Shift Data'):
+                    shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+                else:
+                    shift_names = schedule.get('Shift Name', [])
+                    start_times = schedule.get('Start Time', [])
+                    end_times = schedule.get('End Time', [])
+                    if shift_names and start_times and end_times:
+                        shift_code = shift_names[0] if isinstance(shift_names, list) else shift_names
+                        start_time_raw = start_times[0] if isinstance(start_times, list) else start_times
+                        end_time_raw = end_times[0] if isinstance(end_times, list) else end_times
+                        if 'libur' in shift_code.lower() or str(start_time_raw) == '00:00:00':
+                            shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+                        else:
+                            schedule_in_time = ':'.join(str(start_time_raw).split(':')[:2]) if start_time_raw else '7:30'
+                            schedule_out_time = ':'.join(str(end_time_raw).split(':')[:2]) if end_time_raw else '16:30'
+                    else:
+                        shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+            else:
+                shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+        else:
+            has_time = start_time or end_time
+            is_holiday = str(holiday).upper() == 'H'
+            shift_code = 'Day Off' if is_holiday or not has_time else 'N'
+            if is_holiday or not has_time:
+                schedule_in_time, schedule_out_time = '', ''
+
+        attendance_code = ''
+        if rec:
+            existing_code = rec.get('Attendance_Code', '')
+            if existing_code:
+                attendance_code = existing_code
+            elif start_time or end_time:
+                attendance_code = 'H'
+
+        keterangan = timesheet_remarks_by_date.get(date_str, '')
+
+        rows.append({
+            'Employee ID': emp_info.get('employee_id', emp_info.get('nrp', '')),
+            'Full Name': emp_name,
+            'Date': date_str,
+            'Shift': shift_code, 'Shift Code': '', 'Shift Label': '',
+            'Schedule In': schedule_in_time, 'Schedule Out': schedule_out_time,
+            'Attendance Code': attendance_code,
+            'Check In': start_time, 'Check Out': end_time,
+            'Keterangan': keterangan,
+            'Overtime Check In': get_time(rec.get('Overtime_Check_In')) if rec else '',
+            'Overtime Check Out': get_time(rec.get('Overtime_Check_Out')) if rec else '',
+            'Overtime Before': get_time(rec.get('Overtime_Before')) if rec else '',
+            'Overtime After': get_time(rec.get('Overtime_After')) if rec else '',
+            'TimeOff Check Out': get_time(rec.get('TimeOff_Check_Out')) if rec else '',
+            'TimeOff Break Before': get_time(rec.get('TimeOff_Break_Before')) if rec else '',
+            'TimeOff Break After': get_time(rec.get('TimeOff_Break_After')) if rec else '',
+            'Holiday Code': holiday
+        })
+
+        current_date += timedelta(days=1)
+
+    return rows
+
+
 @app.post("/admin/attendance-celerates/export-csv")
 async def export_attendance_celerates_csv(
     request: Request,
     start_date: str = Form(...),
     end_date: str = Form(...),
     employee: List[str] = Form(default=[]),
-    role_filter: str = Form("")
+    role_filter: str = Form(""),
+    export_mode: str = Form("separate")
 ):
-    """Export Attendance Celerates data as CSV with custom date range"""
+    """Export Attendance Celerates data as CSV with custom date range.
+
+    export_mode:
+      - "separate" (default): one CSV per employee, zipped together (payroll use)
+      - "combined": all employees in a single CSV (internal TM recap use)
+    """
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    from datetime import datetime
     import io
     import csv
 
-    # Parse date strings
     start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
     end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
 
-    # Get same data as dashboard using cache
     employee_mapping = await _get_employee_data_cached()
     employee_list = list(employee_mapping.keys())
 
     attendance_table = config.NOCODB_TABLES.get("attendance")
     nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
 
-    # Apply role filtering to employee list
     filtered_employee_list = employee_list
     if role_filter and role_filter != "all":
         filtered_employee_list = [emp for emp in employee_list if employee_mapping[emp].get('role') == role_filter]
 
-    target_employees = employee if any(employee) else filtered_employee_list
+    target_employees = [e for e in (employee or []) if e]
+    if not target_employees:
+        target_employees = filtered_employee_list
 
-    # If multiple employees, create a zip file
+    mode = (export_mode or "separate").lower()
+
+    # Combined CSV: all selected employees in a single file
+    if mode == "combined":
+        combined_rows = []
+        for emp_name in target_employees:
+            if emp_name not in employee_mapping:
+                continue
+            emp_info = employee_mapping[emp_name]
+            combined_rows.extend(
+                _build_employee_attendance_rows(emp_name, emp_info, start_date_obj, end_date_obj, nocodb_attendance)
+            )
+
+        if not combined_rows:
+            raise HTTPException(status_code=404, detail="No attendance data found for the selected period")
+
+        combined_rows.sort(key=lambda x: (x['Full Name'], x['Date']))
+
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=combined_rows[0].keys())
+        writer.writeheader()
+        writer.writerows(combined_rows)
+
+        filename = f"Attendance_Celerates_Combined_{start_date}_to_{end_date}.csv"
+        if role_filter and role_filter != "all":
+            filename = f"Attendance_Celerates_Combined_{role_filter}_{start_date}_to_{end_date}.csv"
+
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    # Separate mode: zip per-employee CSVs (only when multiple employees)
     if len(target_employees) > 1:
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for emp_name in target_employees:
-                employee_csv_data = []
                 if emp_name not in employee_mapping:
                     continue
-
                 emp_info = employee_mapping[emp_name]
-
-                # Get all attendance records for this employee once
-                where_clause = f"(Name,like,%{emp_name.strip().title()}%)"
-                response = nocodb_attendance.get_records(limit=2000, where=where_clause)
-                attendance_records = response.get('list', []) if response else []
-
-                # Generate all dates in range (same logic as dashboard)
-                current_date = start_date_obj
-                while current_date <= end_date_obj:
-                    # Find attendance record for current date
-                    rec = None
-                    for attendance_rec in attendance_records:
-                        rec_date_str = attendance_rec.get('Date')
-                        if rec_date_str:
-                            rec_date = datetime.strptime(rec_date_str, '%Y-%m-%d').date()
-                            if rec_date == current_date:
-                                rec = attendance_rec
-                                break
-
-                    # Process date (with or without attendance record)
-                    def get_time(val):
-                        if not val: return ''
-                        actual_val = val[0] if isinstance(val, list) else val
-                        if actual_val is None or str(actual_val).strip() == '': return ''
-                        time_str = str(actual_val)
-                        return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
-
-                    # Default values for missing attendance
-                    start_time = get_time(rec.get('Start Time')) if rec else ''
-                    end_time = get_time(rec.get('End Time')) if rec else ''
-                    holiday = rec.get('Holiday', '') if rec else ''
-
-                    is_iot_operations = emp_info.get('role') == 'IoT Operations'
-                    schedule_in_time, schedule_out_time, shift_code = '7:30', '16:30', 'N'
-
-                    if is_iot_operations:
-                        schedule_table = config.NOCODB_TABLES.get("schedule_shifting")
-                        nocodb_schedule = ClsNocoDBProcessor(config.APP_BASE_ID, schedule_table)
-                        emp_numeric_id = emp_info.get('id')
-                        schedule_response = None
-                        if emp_numeric_id:
-                            unique_key = f"{current_date.strftime('%Y-%m-%d')}_{emp_numeric_id}"
-                            where_schedule = f"(Unique Key,eq,{unique_key})"
-                            schedule_response = nocodb_schedule.get_records(limit=5, where=where_schedule)
-                        schedule_records = schedule_response.get('list', []) if schedule_response else []
-                        if schedule_records:
-                            schedule = schedule_records[0]
-                            if not schedule.get('Shift Data'):
-                                shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-                            else:
-                                shift_names, start_times, end_times = schedule.get('Shift Name', []), schedule.get('Start Time', []), schedule.get('End Time', [])
-                                if shift_names and start_times and end_times:
-                                    shift_code = shift_names[0] if isinstance(shift_names, list) else shift_names
-                                    start_time_raw, end_time_raw = (start_times[0] if isinstance(start_times, list) else start_times), (end_times[0] if isinstance(end_times, list) else end_times)
-                                    if 'libur' in shift_code.lower() or str(start_time_raw) == '00:00:00':
-                                        shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-                                    else:
-                                        schedule_in_time = ':'.join(str(start_time_raw).split(':')[:2]) if start_time_raw else '7:30'
-                                        schedule_out_time = ':'.join(str(end_time_raw).split(':')[:2]) if end_time_raw else '16:30'
-                                else:
-                                    shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-                        else:
-                            shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-                    else:
-                        has_time = start_time or end_time
-                        is_holiday = str(holiday).upper() == 'H'
-                        shift_code = 'Day Off' if is_holiday or not has_time else 'N'
-                        if is_holiday or not has_time:
-                            schedule_in_time, schedule_out_time = '', ''
-
-                    # Determine attendance code automatically
-                    attendance_code = ''
-                    if rec:
-                        # Use existing attendance code if available, otherwise auto-generate
-                        existing_code = rec.get('Attendance_Code', '')
-                        if existing_code:
-                            attendance_code = existing_code
-                        elif start_time or end_time:
-                            attendance_code = 'H'  # Hadir (Present)
-
-                    employee_csv_data.append({
-                        'Employee ID': emp_info.get('employee_id', emp_info.get('nrp', '')), 'Full Name': emp_name, 'Date': current_date.strftime('%Y-%m-%d'),
-                        'Shift': shift_code, 'Shift Code': '', 'Shift Label': '', 'Schedule In': schedule_in_time, 'Schedule Out': schedule_out_time,
-                        'Attendance Code': attendance_code, 'Check In': start_time, 'Check Out': end_time, 'Keterangan': rec.get('Remarks', '') if rec else '',
-                        'Overtime Check In': get_time(rec.get('Overtime_Check_In')) if rec else '', 'Overtime Check Out': get_time(rec.get('Overtime_Check_Out')) if rec else '',
-                        'Overtime Before': get_time(rec.get('Overtime_Before')) if rec else '', 'Overtime After': get_time(rec.get('Overtime_After')) if rec else '',
-                        'TimeOff Check Out': get_time(rec.get('TimeOff_Check_Out')) if rec else '', 'TimeOff Break Before': get_time(rec.get('TimeOff_Break_Before')) if rec else '',
-                        'TimeOff Break After': get_time(rec.get('TimeOff_Break_After')) if rec else '', 'Holiday Code': holiday
-                    })
-
-                    current_date += timedelta(days=1)
-
-                if employee_csv_data:
-                    employee_csv_data.sort(key=lambda x: x['Date'])
-                    output = io.StringIO()
-                    writer = csv.DictWriter(output, fieldnames=employee_csv_data[0].keys())
-                    writer.writeheader()
-                    writer.writerows(employee_csv_data)
-                    zipf.writestr(f"Attendance_Celerates_{emp_name.replace(' ', '_')}_{start_date}_to_{end_date}.csv", output.getvalue())
+                employee_csv_data = _build_employee_attendance_rows(
+                    emp_name, emp_info, start_date_obj, end_date_obj, nocodb_attendance
+                )
+                if not employee_csv_data:
+                    continue
+                employee_csv_data.sort(key=lambda x: x['Date'])
+                output = io.StringIO()
+                writer = csv.DictWriter(output, fieldnames=employee_csv_data[0].keys())
+                writer.writeheader()
+                writer.writerows(employee_csv_data)
+                zipf.writestr(
+                    f"Attendance_Celerates_{emp_name.replace(' ', '_')}_{start_date}_to_{end_date}.csv",
+                    output.getvalue()
+                )
 
         zip_buffer.seek(0)
-        return Response(zip_buffer.getvalue(), media_type="application/x-zip-compressed", headers={"Content-Disposition": f"attachment; filename=Attendance_Celerates_{start_date}_to_{end_date}.zip"})
+        return Response(
+            zip_buffer.getvalue(),
+            media_type="application/x-zip-compressed",
+            headers={"Content-Disposition": f"attachment; filename=Attendance_Celerates_{start_date}_to_{end_date}.zip"}
+        )
 
-    # Logic for single employee (or all if none selected) - using date range generation
+    # Single employee CSV
     csv_data = []
     for emp_name in target_employees:
         if emp_name not in employee_mapping:
             continue
         emp_info = employee_mapping[emp_name]
+        csv_data.extend(
+            _build_employee_attendance_rows(emp_name, emp_info, start_date_obj, end_date_obj, nocodb_attendance)
+        )
 
-        # Get all attendance records for this employee
-        where_clause = f"(Name,like,%{emp_name.strip().title()}%)"
-        response = nocodb_attendance.get_records(limit=2000, where=where_clause)
-        attendance_records = response.get('list', []) if response else []
-
-        # Generate all dates in range (same logic as dashboard)
-        current_date = start_date_obj
-        while current_date <= end_date_obj:
-            # Find attendance record for current date
-            rec = None
-            for attendance_rec in attendance_records:
-                rec_date_str = attendance_rec.get('Date')
-                if rec_date_str:
-                    rec_date = datetime.strptime(rec_date_str, '%Y-%m-%d').date()
-                    if rec_date == current_date:
-                        rec = attendance_rec
-                        break
-
-            # Process date (with or without attendance record)
-            def get_time(val):
-                if not val: return ''
-                actual_val = val[0] if isinstance(val, list) else val
-                if actual_val is None or str(actual_val).strip() == '': return ''
-                time_str = str(actual_val)
-                return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
-
-            # Default values for missing attendance
-            start_time = get_time(rec.get('Start Time')) if rec else ''
-            end_time = get_time(rec.get('End Time')) if rec else ''
-            holiday = rec.get('Holiday', '') if rec else ''
-
-            is_iot_operations = emp_info.get('role') == 'IoT Operations'
-            schedule_in_time, schedule_out_time, shift_code = '7:30', '16:30', 'N'
-
-            if is_iot_operations:
-                schedule_table = config.NOCODB_TABLES.get("schedule_shifting")
-                nocodb_schedule = ClsNocoDBProcessor(config.APP_BASE_ID, schedule_table)
-                emp_numeric_id = emp_info.get('id')
-                schedule_response = None
-                if emp_numeric_id:
-                    unique_key = f"{current_date.strftime('%Y-%m-%d')}_{emp_numeric_id}"
-                    where_schedule = f"(Unique Key,eq,{unique_key})"
-                    schedule_response = nocodb_schedule.get_records(limit=5, where=where_schedule)
-                schedule_records = schedule_response.get('list', []) if schedule_response else []
-                if schedule_records:
-                    schedule = schedule_records[0]
-                    if not schedule.get('Shift Data'):
-                        shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-                    else:
-                        shift_names, start_times, end_times = schedule.get('Shift Name', []), schedule.get('Start Time', []), schedule.get('End Time', [])
-                        if shift_names and start_times and end_times:
-                            shift_code = shift_names[0] if isinstance(shift_names, list) else shift_names
-                            start_time_raw, end_time_raw = (start_times[0] if isinstance(start_times, list) else start_times), (end_times[0] if isinstance(end_times, list) else end_times)
-                            if 'libur' in shift_code.lower() or str(start_time_raw) == '00:00:00':
-                                shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-                            else:
-                                schedule_in_time = ':'.join(str(start_time_raw).split(':')[:2]) if start_time_raw else '7:30'
-                                schedule_out_time = ':'.join(str(end_time_raw).split(':')[:2]) if end_time_raw else '16:30'
-                        else:
-                            shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-                else:
-                    shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-            else:
-                has_time = start_time or end_time
-                is_holiday = str(holiday).upper() == 'H'
-                shift_code = 'Day Off' if is_holiday or not has_time else 'N'
-                if is_holiday or not has_time:
-                    schedule_in_time, schedule_out_time = '', ''
-
-            # Determine attendance code automatically
-            attendance_code = ''
-            if rec:
-                # Use existing attendance code if available, otherwise auto-generate
-                existing_code = rec.get('Attendance_Code', '')
-                if existing_code:
-                    attendance_code = existing_code
-                elif start_time or end_time:
-                    attendance_code = 'H'  # Hadir (Present)
-
-            csv_data.append({
-                'Employee ID': emp_info.get('employee_id', emp_info.get('nrp', '')), 'Full Name': emp_name, 'Date': current_date.strftime('%Y-%m-%d'),
-                'Shift': shift_code, 'Shift Code': '', 'Shift Label': '', 'Schedule In': schedule_in_time, 'Schedule Out': schedule_out_time,
-                'Attendance Code': attendance_code, 'Check In': start_time, 'Check Out': end_time, 'Keterangan': rec.get('Remarks', '') if rec else '',
-                'Overtime Check In': get_time(rec.get('Overtime_Check_In')) if rec else '', 'Overtime Check Out': get_time(rec.get('Overtime_Check_Out')) if rec else '',
-                'Overtime Before': get_time(rec.get('Overtime_Before')) if rec else '', 'Overtime After': get_time(rec.get('Overtime_After')) if rec else '',
-                'TimeOff Check Out': get_time(rec.get('TimeOff_Check_Out')) if rec else '', 'TimeOff Break Before': get_time(rec.get('TimeOff_Break_Before')) if rec else '',
-                'TimeOff Break After': get_time(rec.get('TimeOff_Break_After')) if rec else '', 'Holiday Code': holiday
-            })
-
-            current_date += timedelta(days=1)
-    
     if not csv_data:
         raise HTTPException(status_code=404, detail="No attendance data found for the selected period")
 
