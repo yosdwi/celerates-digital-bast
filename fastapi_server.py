@@ -1564,13 +1564,22 @@ async def generate_plan(
             })
             section_id += 1
 
-            if _collect_day_off_evidence(emp_name, month, current_year):
+            day_off_items = _collect_day_off_evidence(emp_name, month, current_year)
+            for sub_idx, item in enumerate(day_off_items, start=1):
                 sections_plan.append({
                     "id": section_id,
                     "type": "attendance_evidence",
-                    "title": f"4.{attendance_counter}.1. Evidence Day Off - {emp_name}",
+                    "title": f"4.{attendance_counter}.{sub_idx}. Evidence Day Off - {emp_name} ({item['title']})",
                     "employee_name": emp_name,
-                    "status": "pending"
+                    "status": "pending",
+                    "data": {
+                        "number": sub_idx,
+                        "title": item['title'],
+                        "image_path": item['image_path'],
+                        "description": item['description'],
+                        "type": evidence_type_param,
+                        "month_name": _get_month_name(month)
+                    }
                 })
                 section_id += 1
             attendance_counter += 1
@@ -1838,11 +1847,17 @@ async def _generate_section_logic(request: Request, section_id: int, plan_id: st
                 section_content["title"] = section["title"]  # Use plan title
 
         elif section["type"] == "attendance_evidence":
-            section_content = await _generate_single_attendance_evidence_section(
-                section["employee_name"], plan["month"], plan["year"], plan["type"], request
-            )
-            if section_content:
-                section_content["title"] = section["title"]  # Use plan title
+            section_data = section.get("data")
+            if section_data:
+                html_content = await _generate_single_attendance_evidence_section(section_data, request)
+                section_content = {
+                    'type': 'attendance_evidence',
+                    'title': section.get("title"),
+                    'content': html_content,
+                    'employee_name': section.get("employee_name", "")
+                }
+            else:
+                section_content = None
 
         if section_content:
             # Update section status in plan and store content
@@ -2223,61 +2238,38 @@ def _collect_day_off_evidence(employee_name: str, month: int, year: int) -> list
     return evidence_data
 
 
-async def _generate_single_attendance_evidence_section(employee_name: str, month: int, year: int, report_type: str, request: Request):
-    """Generate Day Off attendance evidence page for single employee.
+async def _generate_single_attendance_evidence_section(section_data: dict, request: Request):
+    """Render one Day Off evidence image as its own sub-section (one image per page).
 
-    Placed after the employee's 1PAMA attendance log. Uses the evidence_aktivitas.html
-    template format with a header that shows the employee's name. Returns None when
-    the employee has no day-off evidence so the page isn't rendered.
+    Mirrors `_generate_single_evidence_section` so each day-off attachment becomes
+    a distinct BAST section (e.g. 4.x.1, 4.x.2, ...) rather than stacking inside
+    a single page.
     """
     try:
-        all_employees = await _get_employee_data_cached()
-        employee_mapping = _filter_employees_by_type(all_employees, report_type)
-
-        if employee_name not in employee_mapping:
-            return None
-
-        evidence_data = _collect_day_off_evidence(employee_name, month, year)
-        if not evidence_data:
-            return None
+        evidence_data = [{
+            "number": section_data["number"],
+            "title": section_data["title"],
+            "image_path": section_data["image_path"],
+            "description": section_data["description"]
+        }]
 
         template = templates.get_template('evidence/evidence_aktivitas.html')
         html_content = template.render({
             "request": request,
             "evidence_data": evidence_data,
-            "type": report_type,
-            "month": _get_month_name(month)
+            "type": section_data.get("type", ""),
+            "month": section_data.get("month_name", "")
         })
 
         body_content = re.search(r'<body[^>]*>(.*?)</body>', html_content, re.DOTALL)
         inner_html = body_content.group(1) if body_content else html_content
 
-        # One image per page — break before every item except the first, so the
-        # initial image sits with the section header instead of leaving a blank page.
-        page_break_style = (
-            '<style>'
-            '.attendance-evidence-section .evidence-item { '
-            'page-break-before: always; break-before: page; }'
-            '.attendance-evidence-section .evidence-item:first-of-type { '
-            'page-break-before: auto; break-before: auto; }'
-            '</style>'
-        )
-
-        isolated_content = (
-            f'<div class="evidence-section attendance-evidence-section">'
-            f'{page_break_style}{inner_html}</div>'
-        )
-
-        return {
-            'type': 'attendance_evidence',
-            'title': f'Evidence Day Off - {employee_name}',
-            'employee_name': str(employee_name),
-            'content': str(isolated_content)
-        }
+        isolated_content = f'<div class="evidence-section attendance-evidence-section">{inner_html}</div>'
+        return str(isolated_content)
 
     except Exception as e:
-        print(f"Error generating day off evidence for {employee_name}: {e}")
-        return None
+        print(f"❌ Error generating single attendance evidence section: {e}")
+        return f'<div class="evidence-section">Error generating attendance evidence content: {str(e)}</div>'
 
 
 async def _get_iot_tasklist_html_content(month: int, section_type: str, request: Request, page_number: int = 1, total_pages: int = 1):
