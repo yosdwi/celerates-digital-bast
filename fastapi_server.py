@@ -2252,17 +2252,21 @@ async def _generate_single_attendance_evidence_section(employee_name: str, month
         body_content = re.search(r'<body[^>]*>(.*?)</body>', html_content, re.DOTALL)
         inner_html = body_content.group(1) if body_content else html_content
 
-        # Wrap with a header showing the employee's name (per BAST format requirement)
-        header_html = (
-            '<div class="evidence-employee-header" '
-            'style="text-align:center;font-family:Arial,sans-serif;font-size:20px;'
-            'font-weight:bold;margin:20px 0 30px 0;padding-bottom:12px;'
-            'border-bottom:2px solid #000;text-transform:uppercase;letter-spacing:0.5px;">'
-            f'Evidence Day Off - {employee_name.upper()}'
-            '</div>'
+        # One image per page — break before every item except the first, so the
+        # initial image sits with the section header instead of leaving a blank page.
+        page_break_style = (
+            '<style>'
+            '.attendance-evidence-section .evidence-item { '
+            'page-break-before: always; break-before: page; }'
+            '.attendance-evidence-section .evidence-item:first-of-type { '
+            'page-break-before: auto; break-before: auto; }'
+            '</style>'
         )
 
-        isolated_content = f'<div class="evidence-section attendance-evidence-section">{header_html}{inner_html}</div>'
+        isolated_content = (
+            f'<div class="evidence-section attendance-evidence-section">'
+            f'{page_break_style}{inner_html}</div>'
+        )
 
         return {
             'type': 'attendance_evidence',
