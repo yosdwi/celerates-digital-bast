@@ -2170,7 +2170,9 @@ async def _generate_single_employee_attendance(employee_name: str, employee_mapp
 def _collect_day_off_evidence(employee_name: str, month: int, year: int) -> list:
     """Return a list of day-off evidence items (with image_path) for the given employee/period.
 
-    Returns [] when the employee has no day-off attendance with attached evidence.
+    Any attendance record with content in the Evidence field is treated as day-off
+    evidence — Holiday flag / Start-End Time are not consulted, because the source
+    of truth is whatever the operator attached to the Evidence column in NocoDB.
     """
     try:
         attendance_table = config.NOCODB_TABLES.get("attendance")
@@ -2179,7 +2181,7 @@ def _collect_day_off_evidence(employee_name: str, month: int, year: int) -> list
         nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
         start_date, end_date = get_dynamic_month_dates(year, month)
 
-        where_clause = f"(Name,like,%{employee_name.strip().title()}%)"
+        where_clause = f"(Name,like,%{employee_name.strip().title()}%)~and(Evidence,notblank)"
         response = nocodb_attendance.get_records(limit=2000, where=where_clause)
         records = response.get('list', []) if response else []
     except Exception as e:
@@ -2197,14 +2199,6 @@ def _collect_day_off_evidence(employee_name: str, month: int, year: int) -> list
         except (ValueError, TypeError):
             continue
         if not (start_date.date() <= rec_date <= end_date.date()):
-            continue
-
-        # Day-off detection: Holiday flag = 'H' OR no Start/End Time
-        holiday_flag = str(record.get('Holiday', '')).strip().upper()
-        start_time = record.get('Start Time')
-        end_time = record.get('End Time')
-        is_day_off = holiday_flag == 'H' or not (start_time or end_time)
-        if not is_day_off:
             continue
 
         attachments = record.get('Evidence')
