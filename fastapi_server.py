@@ -1569,7 +1569,7 @@ async def generate_plan(
                 sections_plan.append({
                     "id": section_id,
                     "type": "attendance_evidence",
-                    "title": f"4.{attendance_counter}.{sub_idx}. Attendance Evidence",
+                    "title": f"4.{attendance_counter}.{sub_idx}. Attendance Evidence - {emp_name}",
                     "employee_name": emp_name,
                     "status": "pending",
                     "data": {
