@@ -239,125 +239,56 @@
                 </form>
             </div>
 
-            <!-- Attendance Data Tables per Employee -->
-            {% if attendance_data %}
-                {% set employees_data = attendance_data | groupby('full_name') %}
-                {% for employee_name, employee_records in employees_data %}
-                <div class="main-card mb-4">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <div class="card-header-content">
-                            <h5>
-                                <i class="bi bi-person-badge me-2"></i>
-                                {{ employee_name }}
-                            </h5>
-                            <small>{{ employee_records|length }} records</small>
-                        </div>
-                        <div class="btn-group btn-group-sm">
-                            <button type="button" class="btn btn-outline-success" onclick="exportEmployeeCSV('{{ employee_name }}')">
-                                <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export CSV
-                            </button>
-                            <button type="button" class="btn btn-outline-primary" onclick="printEmployeeTable('{{ employee_name }}')">
-                                <i class="bi bi-printer me-1"></i>Print
-                            </button>
-                        </div>
+            <!-- Loading progress (shown while fetching per-employee) -->
+            <div id="loadProgress" class="main-card mb-4" style="display: none;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="fw-medium"><i class="bi bi-hourglass-split me-2"></i><span id="progressLabel">Loading attendance…</span></span>
+                        <span class="text-muted small" id="progressCount">0 / 0</span>
                     </div>
-                    <div class="card-body p-0">
-                        <div class="table-scroll" id="table_{{ employee_name|replace(' ', '_') }}">
-                            <table class="table table-bordered attendance-table mb-0">
-                                <thead>
-                                    <tr>
-                                        <th rowspan="2">Employee ID</th>
-                                        <th rowspan="2">Date</th>
-                                        <th rowspan="2">Shift</th>
-                                        <th rowspan="2">Shift Code</th>
-                                        <th rowspan="2">Shift Label</th>
-                                        <th colspan="2">Schedule</th>
-                                        <th rowspan="2">Attendance Code</th>
-                                        <th colspan="2">Check</th>
-                                        <th rowspan="2">Keterangan</th>
-                                        <th colspan="4">Overtime</th>
-                                        <th colspan="3">Time off</th>
-                                        <th rowspan="2">Holiday Code</th>
-                                    </tr>
-                                    <tr>
-                                        <th>In</th>
-                                        <th>Out</th>
-                                        <th>In</th>
-                                        <th>Out</th>
-                                        <th>Check In</th>
-                                        <th>Check Out</th>
-                                        <th>Check Out Before</th>
-                                        <th>Check Out After</th>
-                                        <th>Check Out</th>
-                                        <th>Break Before</th>
-                                        <th>Break After</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for record in employee_records %}
-                                    <tr {% if record.is_manual_edit %}class="manual-edit"{% endif %}>
-                                        <td>{{ record.employee_id or '' }}</td>
-                                        <td>{{ record.date.strftime('%Y-%m-%d') if record.date else '' }}</td>
-                                        <td>{{ record.shift or '' }}</td>
-                                        <td>{{ record.shift_code or '' }}</td>
-                                        <td>{{ record.shift_label or '' }}</td>
-                                        <td>{{ record.schedule_in or '' }}</td>
-                                        <td>{{ record.schedule_out or '' }}</td>
-                                        <td>{{ record.attendance_code or '' }}</td>
-                                        <td>{{ record.check_in or '' }}</td>
-                                        <td>{{ record.check_out or '' }}</td>
-                                        <td>{{ record.keterangan or '' }}</td>
-                                        <td>{{ record.overtime_check_in or '' }}</td>
-                                        <td>{{ record.overtime_check_out or '' }}</td>
-                                        <td>{{ record.overtime_before or '' }}</td>
-                                        <td>{{ record.overtime_after or '' }}</td>
-                                        <td>{{ record.timeoff_check_out or '' }}</td>
-                                        <td>{{ record.timeoff_break_before or '' }}</td>
-                                        <td>{{ record.timeoff_break_after or '' }}</td>
-                                        <td>{{ record.holiday_code or '' }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
+                    <div class="progress" style="height: 8px;">
+                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width: 0%;"></div>
                     </div>
                 </div>
-                {% endfor %}
+            </div>
 
-                <!-- Bulk Export Section -->
-                <div class="main-card">
-                    <div class="card-header">
-                        <div class="card-header-content">
-                            <h5>
-                                <i class="bi bi-collection me-2"></i>
-                                Bulk Operations
-                            </h5>
-                            <small>Export multiple employees data</small>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div class="d-flex gap-2 flex-wrap">
-                            <button type="button" class="btn btn-success" onclick="exportAllEmployeesCSV()">
-                                <i class="bi bi-file-earmark-spreadsheet me-2"></i>Export All (Separate CSVs)
-                            </button>
-                            <button type="button" class="btn btn-outline-success" onclick="exportCombinedCSV()">
-                                <i class="bi bi-file-earmark-spreadsheet me-2"></i>Export Combined CSV
-                            </button>
-                            <button type="button" class="btn btn-outline-primary" onclick="printAllTables()">
-                                <i class="bi bi-printer me-2"></i>Print All Tables
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            {% else %}
-                <div class="main-card">
+            <!-- Attendance Data Tables per Employee (rendered client-side, progressively) -->
+            <div id="resultsContainer">
+                <div class="main-card" id="emptyState">
                     <div class="card-body text-center py-5">
                         <i class="bi bi-inbox display-1 text-muted mb-3"></i>
-                        <h5 class="text-muted">No attendance records found</h5>
+                        <h5 class="text-muted">No attendance records loaded</h5>
                         <p class="text-muted">Please select date range and employees, then click Filter to load data.</p>
                     </div>
                 </div>
-            {% endif %}
+            </div>
+
+            <!-- Bulk Export Section (shown after data loads) -->
+            <div class="main-card" id="bulkOperations" style="display: none;">
+                <div class="card-header">
+                    <div class="card-header-content">
+                        <h5>
+                            <i class="bi bi-collection me-2"></i>
+                            Bulk Operations
+                        </h5>
+                        <small>Export multiple employees data</small>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button type="button" class="btn btn-success" onclick="exportAllEmployeesCSV()">
+                            <i class="bi bi-file-earmark-spreadsheet me-2"></i>Export All (Separate CSVs)
+                        </button>
+                        <button type="button" class="btn btn-outline-success" onclick="exportCombinedCSV()">
+                            <i class="bi bi-file-earmark-spreadsheet me-2"></i>Export Combined CSV
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" onclick="printAllTables()">
+                            <i class="bi bi-printer me-2"></i>Print All Tables
+                        </button>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
@@ -606,6 +537,235 @@
             printWindow.document.close();
             printWindow.print();
         }
+
+        // ---------------------------------------------------------------------
+        // Progressive per-employee loading (avoids the single large request that
+        // caused the Cloudflare 524 timeout). Each employee is fetched through
+        // /admin/attendance-celerates/employee-data with bounded concurrency.
+        // ---------------------------------------------------------------------
+        const FETCH_CONCURRENCY = 4;
+
+        function escapeHtml(value) {
+            if (value === null || value === undefined) return '';
+            return String(value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function renderEmployeeCard(employeeName, records) {
+            const tableId = 'table_' + employeeName.replace(/ /g, '_');
+            const safeName = escapeHtml(employeeName);
+            const jsName = employeeName.replace(/'/g, "\\'");
+
+            let rowsHtml = '';
+            records.forEach(r => {
+                const cls = r.is_manual_edit ? ' class="manual-edit"' : '';
+                rowsHtml += `<tr${cls}>
+                    <td>${escapeHtml(r.employee_id)}</td>
+                    <td>${escapeHtml(r.date)}</td>
+                    <td>${escapeHtml(r.shift)}</td>
+                    <td>${escapeHtml(r.shift_code)}</td>
+                    <td>${escapeHtml(r.shift_label)}</td>
+                    <td>${escapeHtml(r.schedule_in)}</td>
+                    <td>${escapeHtml(r.schedule_out)}</td>
+                    <td>${escapeHtml(r.attendance_code)}</td>
+                    <td>${escapeHtml(r.check_in)}</td>
+                    <td>${escapeHtml(r.check_out)}</td>
+                    <td>${escapeHtml(r.keterangan)}</td>
+                    <td>${escapeHtml(r.overtime_check_in)}</td>
+                    <td>${escapeHtml(r.overtime_check_out)}</td>
+                    <td>${escapeHtml(r.overtime_before)}</td>
+                    <td>${escapeHtml(r.overtime_after)}</td>
+                    <td>${escapeHtml(r.timeoff_check_out)}</td>
+                    <td>${escapeHtml(r.timeoff_break_before)}</td>
+                    <td>${escapeHtml(r.timeoff_break_after)}</td>
+                    <td>${escapeHtml(r.holiday_code)}</td>
+                </tr>`;
+            });
+
+            return `
+            <div class="main-card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div class="card-header-content">
+                        <h5><i class="bi bi-person-badge me-2"></i>${safeName}</h5>
+                        <small>${records.length} records</small>
+                    </div>
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-success" onclick="exportEmployeeCSV('${jsName}')">
+                            <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export CSV
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" onclick="printEmployeeTable('${jsName}')">
+                            <i class="bi bi-printer me-1"></i>Print
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-scroll" id="${tableId}">
+                        <table class="table table-bordered attendance-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th rowspan="2">Employee ID</th>
+                                    <th rowspan="2">Date</th>
+                                    <th rowspan="2">Shift</th>
+                                    <th rowspan="2">Shift Code</th>
+                                    <th rowspan="2">Shift Label</th>
+                                    <th colspan="2">Schedule</th>
+                                    <th rowspan="2">Attendance Code</th>
+                                    <th colspan="2">Check</th>
+                                    <th rowspan="2">Keterangan</th>
+                                    <th colspan="4">Overtime</th>
+                                    <th colspan="3">Time off</th>
+                                    <th rowspan="2">Holiday Code</th>
+                                </tr>
+                                <tr>
+                                    <th>In</th><th>Out</th>
+                                    <th>In</th><th>Out</th>
+                                    <th>Check In</th><th>Check Out</th>
+                                    <th>Check Out Before</th><th>Check Out After</th>
+                                    <th>Check Out</th><th>Break Before</th><th>Break After</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rowsHtml}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        function getTargetEmployees() {
+            // Use the explicit selection; if nothing is checked, fall back to all
+            // currently-visible (role-filtered) employees.
+            let boxes = Array.from(document.querySelectorAll('.employee-checkbox:checked'));
+            if (boxes.length === 0) {
+                boxes = Array.from(document.querySelectorAll('.employee-item:not([style*="none"]) .employee-checkbox'));
+            }
+            return boxes.map(b => b.value).sort((a, b) => a.localeCompare(b));
+        }
+
+        async function loadAttendance() {
+            const startDate = document.querySelector('[name="start_date"]').value;
+            const endDate = document.querySelector('[name="end_date"]').value;
+            if (!startDate || !endDate) {
+                alert('Please select both start and end dates.');
+                return;
+            }
+
+            const employees = getTargetEmployees();
+            if (employees.length === 0) {
+                alert('No employees available for the selected role.');
+                return;
+            }
+
+            const resultsContainer = document.getElementById('resultsContainer');
+            const progress = document.getElementById('loadProgress');
+            const progressBar = document.getElementById('progressBar');
+            const progressCount = document.getElementById('progressCount');
+            const bulkOps = document.getElementById('bulkOperations');
+
+            // Reset UI and create ordered placeholders so cards keep a stable order.
+            resultsContainer.innerHTML = '';
+            bulkOps.style.display = 'none';
+            progress.style.display = 'block';
+            progressBar.style.width = '0%';
+
+            const slots = employees.map((name, i) => {
+                const slot = document.createElement('div');
+                slot.id = `emp-slot-${i}`;
+                slot.innerHTML = `
+                    <div class="main-card mb-4"><div class="card-body d-flex align-items-center gap-2 text-muted">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                        <span>Loading ${escapeHtml(name)}…</span>
+                    </div></div>`;
+                resultsContainer.appendChild(slot);
+                return slot;
+            });
+
+            let done = 0, totalRecords = 0;
+            const total = employees.length;
+            progressCount.textContent = `0 / ${total}`;
+
+            async function fetchOne(index) {
+                const name = employees[index];
+                const slot = slots[index];
+                try {
+                    const body = new URLSearchParams({ employee: name, start_date: startDate, end_date: endDate });
+                    const resp = await fetch('/admin/attendance-celerates/employee-data', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: body.toString()
+                    });
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    const data = await resp.json();
+                    const records = data.records || [];
+                    totalRecords += records.length;
+                    slot.innerHTML = renderEmployeeCard(data.employee || name, records);
+                } catch (err) {
+                    slot.innerHTML = `
+                        <div class="main-card mb-4"><div class="card-body text-danger d-flex align-items-center gap-2">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <span>Failed to load <strong>${escapeHtml(name)}</strong> (${escapeHtml(err.message)}).</span>
+                            <button class="btn btn-sm btn-outline-danger ms-auto" onclick="retryEmployee(${index})">Retry</button>
+                        </div></div>`;
+                } finally {
+                    done++;
+                    progressCount.textContent = `${done} / ${total}`;
+                    progressBar.style.width = `${Math.round((done / total) * 100)}%`;
+                }
+            }
+
+            // Expose a retry that re-runs a single slot.
+            window.__attendanceJobs = { employees, slots, startDate, endDate };
+            window.retryEmployee = async function (index) {
+                const slot = window.__attendanceJobs.slots[index];
+                const name = window.__attendanceJobs.employees[index];
+                slot.innerHTML = `
+                    <div class="main-card mb-4"><div class="card-body d-flex align-items-center gap-2 text-muted">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                        <span>Retrying ${escapeHtml(name)}…</span>
+                    </div></div>`;
+                try {
+                    const body = new URLSearchParams({ employee: name, start_date: window.__attendanceJobs.startDate, end_date: window.__attendanceJobs.endDate });
+                    const resp = await fetch('/admin/attendance-celerates/employee-data', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: body.toString()
+                    });
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    const data = await resp.json();
+                    slot.innerHTML = renderEmployeeCard(data.employee || name, data.records || []);
+                } catch (err) {
+                    slot.innerHTML = `
+                        <div class="main-card mb-4"><div class="card-body text-danger d-flex align-items-center gap-2">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <span>Failed to load <strong>${escapeHtml(name)}</strong> (${escapeHtml(err.message)}).</span>
+                            <button class="btn btn-sm btn-outline-danger ms-auto" onclick="retryEmployee(${index})">Retry</button>
+                        </div></div>`;
+                }
+            };
+
+            // Worker pool with bounded concurrency.
+            let next = 0;
+            async function worker() {
+                while (next < total) {
+                    const current = next++;
+                    await fetchOne(current);
+                }
+            }
+            const workers = [];
+            for (let w = 0; w < Math.min(FETCH_CONCURRENCY, total); w++) workers.push(worker());
+            await Promise.all(workers);
+
+            progress.style.display = 'none';
+            if (totalRecords > 0) {
+                bulkOps.style.display = 'block';
+            }
+        }
+
+        // Intercept the filter form: load via AJAX instead of a full-page POST.
+        document.getElementById('filterForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            loadAttendance();
+        });
     </script>
 </body>
 </html>

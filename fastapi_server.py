@@ -1,4 +1,5 @@
 import os
+import asyncio
 import calendar
 import hashlib
 import secrets
@@ -15,7 +16,7 @@ import bcrypt
 import zipfile
 
 from fastapi import FastAPI, HTTPException, Depends, Request, Form, File, UploadFile, status, Query, BackgroundTasks
-from fastapi.responses import HTMLResponse, FileResponse, Response, RedirectResponse
+from fastapi.responses import HTMLResponse, FileResponse, Response, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -3127,6 +3128,55 @@ async def attendance_celerates_dashboard_post(
         "selected_employees": employee if employee else [], "datetime": datetime
     })
 
+@app.post("/admin/attendance-celerates/employee-data")
+async def attendance_celerates_employee_data(
+    request: Request,
+    employee: str = Form(...),
+    start_date: str = Form(...),
+    end_date: str = Form(...)
+):
+    """Return attendance rows for a SINGLE employee as JSON.
+
+    The dashboard fetches each employee through this endpoint (with bounded concurrency
+    on the client), so a single request never aggregates every employee at once — which is
+    what caused the Cloudflare 524 timeout. Each call is small, fast, and run off the event
+    loop via a worker thread.
+    """
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    try:
+        start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+        end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return JSONResponse({"error": "invalid date format"}, status_code=400)
+
+    employee_mapping = await _get_employee_data_cached()
+    emp_name = employee.strip().title()
+    emp_info = employee_mapping.get(emp_name) or employee_mapping.get(employee)
+    if not emp_info:
+        return JSONResponse({"error": f"employee not found: {employee}"}, status_code=404)
+
+    # Resolve the canonical key so the response label matches the dashboard list.
+    canonical_name = emp_name if emp_name in employee_mapping else employee
+
+    try:
+        records = await asyncio.to_thread(
+            _build_employee_attendance_data, canonical_name, emp_info, start_date_obj, end_date_obj
+        )
+    except Exception as e:
+        print(f"Error building attendance data for {employee}: {e}")
+        return JSONResponse({"error": "failed to load attendance data"}, status_code=500)
+
+    return JSONResponse({
+        "employee": canonical_name,
+        "role": emp_info.get('role', ''),
+        "records": records,
+        "count": len(records)
+    })
+
+
 def _get_timesheet_remarks_by_date(emp_name: str, start_date_obj, end_date_obj) -> dict:
     """Fetch Timesheet Remarks for an employee within the date range, keyed by 'YYYY-MM-DD'."""
     timesheet_table_id = config.NOCODB_TABLES.get("timesheet")
@@ -3155,6 +3205,147 @@ def _get_timesheet_remarks_by_date(emp_name: str, start_date_obj, end_date_obj) 
             if remark:
                 remarks_by_date[date_val] = remark
     return remarks_by_date
+
+
+def _fetch_iot_schedule_by_key(start_date_obj, end_date_obj) -> dict:
+    """Batch-fetch IoT shift schedules covering the date range in ONE request per month.
+
+    Avoids the previous N+1 pattern (one NocoDB call per day). Returns a dict keyed by
+    'Unique Key' ('YYYY-MM-DD_<employee_id>') so callers can look up an exact day in O(1).
+    """
+    schedule_table = config.NOCODB_TABLES.get("schedule_shifting")
+    if not schedule_table:
+        return {}
+
+    nocodb_schedule = ClsNocoDBProcessor(config.APP_BASE_ID, schedule_table)
+
+    # Build the list of 'YYYY-MM' prefixes spanning the range (handles multi-month ranges).
+    prefixes = []
+    cursor = start_date_obj.replace(day=1)
+    while cursor <= end_date_obj:
+        prefixes.append(cursor.strftime('%Y-%m'))
+        cursor = (cursor.replace(year=cursor.year + 1, month=1)
+                  if cursor.month == 12 else cursor.replace(month=cursor.month + 1))
+
+    by_key = {}
+    for ym in prefixes:
+        # One call per month; matches every employee's shift rows for that month.
+        where = f"(Unique Key,like,{ym}-%)"
+        resp = nocodb_schedule.get_records(limit=2000, where=where)
+        for r in (resp.get('list', []) if resp else []):
+            uk = r.get('Unique Key')
+            if uk:
+                by_key[uk] = r
+    return by_key
+
+
+def _build_employee_attendance_data(emp_name: str, emp_info: dict, start_date_obj, end_date_obj,
+                                    schedule_by_key: dict = None) -> list:
+    """Build per-date attendance rows (template/JSON shape) for a single employee.
+
+    All heavy NocoDB I/O lives here so it can be run in a worker thread per employee
+    (see the /employee-data endpoint). Pass `schedule_by_key` to reuse a pre-fetched
+    IoT schedule batch; otherwise it is fetched lazily for IoT Operations employees.
+    """
+    def get_time(val):
+        if not val:
+            return ''
+        actual_val = val[0] if isinstance(val, list) else val
+        if actual_val is None or str(actual_val).strip() == '':
+            return ''
+        time_str = str(actual_val)
+        return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
+
+    attendance_table = config.NOCODB_TABLES.get("attendance")
+    nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
+    where_clause = f"(Name,like,%{emp_name.strip().title()}%)"
+    response = nocodb_attendance.get_records(limit=2000, where=where_clause)
+    records = response.get('list', []) if response else []
+
+    attendance_by_date = {}
+    for rec in records:
+        rec_date_str = rec.get('Date')
+        if rec_date_str:
+            attendance_by_date[rec_date_str] = rec
+
+    timesheet_remarks_by_date = _get_timesheet_remarks_by_date(emp_name, start_date_obj, end_date_obj)
+
+    is_iot_operations = emp_info.get('role') == 'IoT Operations'
+    emp_numeric_id = emp_info.get('id')
+    if is_iot_operations and emp_numeric_id and schedule_by_key is None:
+        schedule_by_key = _fetch_iot_schedule_by_key(start_date_obj, end_date_obj)
+    schedule_by_key = schedule_by_key or {}
+
+    rows = []
+    current_date = start_date_obj
+    while current_date <= end_date_obj:
+        date_str = current_date.strftime('%Y-%m-%d')
+        rec = attendance_by_date.get(date_str)
+        rec_date = current_date
+
+        keterangan = timesheet_remarks_by_date.get(date_str, '')
+
+        if rec is None:
+            last_modified, is_manual_edit, start_time, end_time, holiday, attendance_code = '', False, '', '', '', ''
+            overtime_fields = {'overtime_check_in': '', 'overtime_check_out': '', 'overtime_before': '', 'overtime_after': ''}
+            timeoff_fields = {'timeoff_check_out': '', 'timeoff_break_before': '', 'timeoff_break_after': ''}
+        else:
+            last_modified = rec.get('Last Modified', '')
+            is_manual_edit = '@system.com' not in str(last_modified) if last_modified else False
+            start_time, end_time = get_time(rec.get('Start Time')), get_time(rec.get('End Time'))
+            holiday, attendance_code = rec.get('Holiday', ''), rec.get('Attendance_Code', '')
+            overtime_fields = {
+                'overtime_check_in': get_time(rec.get('Overtime_Check_In')),
+                'overtime_check_out': get_time(rec.get('Overtime_Check_Out')),
+                'overtime_before': get_time(rec.get('Overtime_Before')),
+                'overtime_after': get_time(rec.get('Overtime_After'))
+            }
+            timeoff_fields = {
+                'timeoff_check_out': get_time(rec.get('TimeOff_Check_Out')),
+                'timeoff_break_before': get_time(rec.get('TimeOff_Break_Before')),
+                'timeoff_break_after': get_time(rec.get('TimeOff_Break_After'))
+            }
+
+        schedule_in_time, schedule_out_time, shift_code = '7:30', '16:30', 'N'
+
+        if is_iot_operations:
+            schedule = None
+            if emp_numeric_id:
+                schedule = schedule_by_key.get(f"{date_str}_{emp_numeric_id}")
+
+            if schedule:
+                if not schedule.get('Shift Data'):
+                    shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+                else:
+                    shift_names, start_times, end_times = schedule.get('Shift Name', []), schedule.get('Start Time', []), schedule.get('End Time', [])
+                    if shift_names and start_times and end_times:
+                        shift_code = shift_names[0] if isinstance(shift_names, list) else shift_names
+                        start_time_raw = start_times[0] if isinstance(start_times, list) else start_times
+                        end_time_raw = end_times[0] if isinstance(end_times, list) else end_times
+                        if 'libur' in shift_code.lower() or str(start_time_raw) == '00:00:00':
+                            shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+                        else:
+                            schedule_in_time = ':'.join(str(start_time_raw).split(':')[:2]) if start_time_raw else '7:30'
+                            schedule_out_time = ':'.join(str(end_time_raw).split(':')[:2]) if end_time_raw else '16:30'
+                    else:
+                        shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+            else:
+                shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+        else:
+            if str(holiday).upper() == 'H' or not (start_time or end_time):
+                shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
+
+        rows.append({
+            'employee_id': emp_info.get('employee_id', emp_info.get('nrp', '')), 'full_name': emp_name,
+            'date': rec_date.strftime('%Y-%m-%d'),
+            'shift': shift_code, 'shift_code': '', 'shift_label': '', 'schedule_in': schedule_in_time, 'schedule_out': schedule_out_time,
+            'attendance_code': attendance_code, 'check_in': start_time, 'check_out': end_time, 'keterangan': keterangan,
+            **overtime_fields, **timeoff_fields, 'holiday_code': holiday, 'is_manual_edit': is_manual_edit
+        })
+
+        current_date += timedelta(days=1)
+
+    return rows
 
 
 def _build_employee_attendance_rows(emp_name: str, emp_info: dict, start_date_obj, end_date_obj, nocodb_attendance):
