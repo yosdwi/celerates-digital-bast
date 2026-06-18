@@ -294,6 +294,7 @@
 
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script>
         // Page initialization
 
@@ -379,26 +380,68 @@
             updateSelectedText();
         });
 
+        // ---------------------------------------------------------------------
+        // CSV export from the data ALREADY loaded in the browser. No server
+        // round-trip / NocoDB re-fetch, so it can never hit the 524 timeout.
+        // `attendanceStore` is populated as each employee card is rendered.
+        // ---------------------------------------------------------------------
+        const attendanceStore = {};
+
+        // CSV header -> record key (mirrors the old server-side column order).
+        const CSV_COLUMNS = [
+            ['Employee ID', 'employee_id'], ['Full Name', 'full_name'], ['Date', 'date'],
+            ['Shift', 'shift'], ['Shift Code', 'shift_code'], ['Shift Label', 'shift_label'],
+            ['Schedule In', 'schedule_in'], ['Schedule Out', 'schedule_out'],
+            ['Attendance Code', 'attendance_code'], ['Check In', 'check_in'], ['Check Out', 'check_out'],
+            ['Keterangan', 'keterangan'],
+            ['Overtime Check In', 'overtime_check_in'], ['Overtime Check Out', 'overtime_check_out'],
+            ['Overtime Before', 'overtime_before'], ['Overtime After', 'overtime_after'],
+            ['TimeOff Check Out', 'timeoff_check_out'], ['TimeOff Break Before', 'timeoff_break_before'],
+            ['TimeOff Break After', 'timeoff_break_after'], ['Holiday Code', 'holiday_code']
+        ];
+
+        function csvCell(value) {
+            const s = (value === null || value === undefined) ? '' : String(value);
+            return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+        }
+
+        function recordsToCSV(records) {
+            const lines = [CSV_COLUMNS.map(c => csvCell(c[0])).join(',')];
+            records.forEach(r => {
+                lines.push(CSV_COLUMNS.map(c => csvCell(r[c[1]])).join(','));
+            });
+            return lines.join('\r\n');
+        }
+
+        function downloadBlob(filename, content, mime) {
+            const blob = (content instanceof Blob) ? content : new Blob([content], { type: mime });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function getPeriod() {
+            return {
+                start: document.querySelector('[name="start_date"]').value,
+                end: document.querySelector('[name="end_date"]').value
+            };
+        }
+
         // Individual Employee Export/Print Functions
         function exportEmployeeCSV(employeeName) {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = '/admin/attendance-celerates/export-csv';
-
-            const startDate = document.querySelector('[name="start_date"]').value;
-            const endDate = document.querySelector('[name="end_date"]').value;
-
-            form.innerHTML = `
-                <input type="hidden" name="start_date" value="${startDate}">
-                <input type="hidden" name="end_date" value="${endDate}">
-                <input type="hidden" name="employee" value="${employeeName}">
-                <input type="hidden" name="role_filter" value="">
-                <input type="hidden" name="export_mode" value="separate">
-            `;
-
-            document.body.appendChild(form);
-            form.submit();
-            document.body.removeChild(form);
+            const records = attendanceStore[employeeName];
+            if (!records || records.length === 0) {
+                alert('No loaded data for this employee. Click Filter first.');
+                return;
+            }
+            const { start, end } = getPeriod();
+            const filename = `Attendance_Celerates_${employeeName.replace(/ /g, '_')}_${start}_to_${end}.csv`;
+            downloadBlob(filename, recordsToCSV(records), 'text/csv;charset=utf-8;');
         }
 
         function printEmployeeTable(employeeName) {
@@ -433,64 +476,54 @@
             }
         }
 
-        // Bulk Export/Print Functions
-        function exportAllEmployeesCSV() {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = '/admin/attendance-celerates/export-csv';
+        // Bulk Export/Print Functions — all driven by the already-loaded data.
+        function loadedEmployeeNames() {
+            // Keep the same order the cards were rendered in (alphabetical).
+            return Object.keys(attendanceStore).sort((a, b) => a.localeCompare(b));
+        }
 
-            const startDate = document.querySelector('[name="start_date"]').value;
-            const endDate = document.querySelector('[name="end_date"]').value;
+        async function exportAllEmployeesCSV() {
+            const names = loadedEmployeeNames();
+            if (names.length === 0) {
+                alert('No loaded data to export. Click Filter first.');
+                return;
+            }
+            const { start, end } = getPeriod();
 
-            let formContent = `
-                <input type="hidden" name="start_date" value="${startDate}">
-                <input type="hidden" name="end_date" value="${endDate}">
-                <input type="hidden" name="export_mode" value="separate">
-            `;
-
-            const checkedEmployees = document.querySelectorAll('.employee-checkbox:checked');
-
-            if (checkedEmployees.length === 0) {
-                alert('Please select at least one employee to export.');
+            if (typeof JSZip === 'undefined') {
+                alert('Zip library failed to load; using Combined CSV instead.');
+                exportCombinedCSV();
                 return;
             }
 
-            checkedEmployees.forEach(checkbox => {
-                formContent += `<input type="hidden" name="employee" value="${checkbox.value}">`;
+            const zip = new JSZip();
+            names.forEach(name => {
+                const records = attendanceStore[name] || [];
+                if (records.length === 0) return;
+                zip.file(`Attendance_Celerates_${name.replace(/ /g, '_')}_${start}_to_${end}.csv`, recordsToCSV(records));
             });
 
-            form.innerHTML = formContent;
-            document.body.appendChild(form);
-            form.submit();
-            document.body.removeChild(form);
+            const blob = await zip.generateAsync({ type: 'blob' });
+            downloadBlob(`Attendance_Celerates_${start}_to_${end}.zip`, blob);
         }
 
         function exportCombinedCSV() {
-            const form = document.getElementById('filterForm');
-            const formData = new FormData(form);
+            const names = loadedEmployeeNames();
+            if (names.length === 0) {
+                alert('No loaded data to export. Click Filter first.');
+                return;
+            }
+            const { start, end } = getPeriod();
 
-            const exportForm = document.createElement('form');
-            exportForm.method = 'POST';
-            exportForm.action = '/admin/attendance-celerates/export-csv';
-
-            let formContent = `
-                <input type="hidden" name="start_date" value="${formData.get('start_date')}">
-                <input type="hidden" name="end_date" value="${formData.get('end_date')}">
-                <input type="hidden" name="role_filter" value="${document.getElementById('roleFilter').value}">
-                <input type="hidden" name="export_mode" value="combined">
-            `;
-
-            // Pass the same selected employees as the All Separate button so the user's
-            // current selection drives both modes consistently.
-            const checkedEmployees = document.querySelectorAll('.employee-checkbox:checked');
-            checkedEmployees.forEach(checkbox => {
-                formContent += `<input type="hidden" name="employee" value="${checkbox.value}">`;
+            let allRecords = [];
+            names.forEach(name => { allRecords = allRecords.concat(attendanceStore[name] || []); });
+            allRecords.sort((a, b) => {
+                const n = String(a.full_name).localeCompare(String(b.full_name));
+                return n !== 0 ? n : String(a.date).localeCompare(String(b.date));
             });
 
-            exportForm.innerHTML = formContent;
-            document.body.appendChild(exportForm);
-            exportForm.submit();
-            document.body.removeChild(exportForm);
+            downloadBlob(`Attendance_Celerates_Combined_${start}_to_${end}.csv`,
+                         recordsToCSV(allRecords), 'text/csv;charset=utf-8;');
         }
 
         function printAllTables() {
@@ -663,6 +696,7 @@
             const bulkOps = document.getElementById('bulkOperations');
 
             // Reset UI and create ordered placeholders so cards keep a stable order.
+            Object.keys(attendanceStore).forEach(k => delete attendanceStore[k]);
             resultsContainer.innerHTML = '';
             bulkOps.style.display = 'none';
             progress.style.display = 'block';
@@ -698,6 +732,7 @@
                     const data = await resp.json();
                     const records = data.records || [];
                     totalRecords += records.length;
+                    attendanceStore[data.employee || name] = records;
                     slot.innerHTML = renderEmployeeCard(data.employee || name, records);
                 } catch (err) {
                     slot.innerHTML = `
@@ -732,7 +767,9 @@
                     });
                     if (!resp.ok) throw new Error('HTTP ' + resp.status);
                     const data = await resp.json();
-                    slot.innerHTML = renderEmployeeCard(data.employee || name, data.records || []);
+                    const records = data.records || [];
+                    attendanceStore[data.employee || name] = records;
+                    slot.innerHTML = renderEmployeeCard(data.employee || name, records);
                 } catch (err) {
                     slot.innerHTML = `
                         <div class="main-card mb-4"><div class="card-body text-danger d-flex align-items-center gap-2">
