@@ -2994,127 +2994,35 @@ async def attendance_celerates_dashboard_post(
 
     attendance_data = []
 
-    # Only load data if date parameters are provided (when filter is applied)
+    # Only load data if date parameters are provided (when filter is applied).
+    #
+    # NOTE: The dashboard UI no longer calls this path — it loads each employee
+    # through /admin/attendance-celerates/employee-data with bounded concurrency
+    # to avoid the Cloudflare 524 timeout that this aggregated request caused.
+    # This handler is kept as a non-JS fallback and reuses the shared builder
+    # (which batches the IoT schedule lookups, removing the old per-day N+1).
     if start_date and end_date:
-        # Parse date strings
         start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
         end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
 
-        # Get attendance data
-        attendance_table = config.NOCODB_TABLES.get("attendance")
-        nocodb_attendance = ClsNocoDBProcessor(config.APP_BASE_ID, attendance_table)
-
-        # Filter employees if specific employees selected
         target_employees = employee if employee else employee_list
+
+        # Reuse one batched IoT schedule fetch across all employees in this request
+        # (only needed when at least one selected employee is IoT Operations).
+        has_iot = any(
+            employee_mapping.get(n, {}).get('role') == 'IoT Operations' for n in target_employees
+        )
+        schedule_by_key = _fetch_iot_schedule_by_key(start_date_obj, end_date_obj) if has_iot else {}
 
         for emp_name in target_employees:
             if emp_name not in employee_mapping:
                 continue
-
-            emp_info = employee_mapping[emp_name]
-            where_clause = f"(Name,like,%{emp_name.strip().title()}%)"
-            response = nocodb_attendance.get_records(limit=2000, where=where_clause)
-            records = response.get('list', []) if response else []
-
-            # Create a lookup dict for attendance records by date
-            attendance_by_date = {}
-            for rec in records:
-                rec_date_str = rec.get('Date')
-                if rec_date_str:
-                    attendance_by_date[rec_date_str] = rec
-
-            # Pull Keterangan from Timesheet.Remarks (matches the CSV export source)
-            timesheet_remarks_by_date = _get_timesheet_remarks_by_date(
-                emp_name, start_date_obj, end_date_obj
+            attendance_data.extend(
+                _build_employee_attendance_data(
+                    emp_name, employee_mapping[emp_name], start_date_obj, end_date_obj,
+                    schedule_by_key=schedule_by_key
+                )
             )
-
-            # Generate all dates in range
-            current_date = start_date_obj
-            while current_date <= end_date_obj:
-                date_str = current_date.strftime('%Y-%m-%d')
-                rec = attendance_by_date.get(date_str)
-
-                rec_date = current_date
-
-                def get_time(val):
-                    if not val: return ''
-                    actual_val = val[0] if isinstance(val, list) else val
-                    if actual_val is None or str(actual_val).strip() == '': return ''
-                    time_str = str(actual_val)
-                    return ':'.join(time_str.split(' ')[-1].split('+')[0].split(':')[:2])
-
-                keterangan = timesheet_remarks_by_date.get(date_str, '')
-
-                if rec is None:
-                    last_modified, is_manual_edit, start_time, end_time, holiday, attendance_code = '', False, '', '', '', ''
-                    overtime_fields = {'overtime_check_in': '', 'overtime_check_out': '', 'overtime_before': '', 'overtime_after': ''}
-                    timeoff_fields = {'timeoff_check_out': '', 'timeoff_break_before': '', 'timeoff_break_after': ''}
-                else:
-                    last_modified = rec.get('Last Modified', '')
-                    is_manual_edit = '@system.com' not in str(last_modified) if last_modified else False
-                    start_time, end_time = get_time(rec.get('Start Time')), get_time(rec.get('End Time'))
-                    holiday, attendance_code = rec.get('Holiday', ''), rec.get('Attendance_Code', '')
-                    overtime_fields = {
-                        'overtime_check_in': get_time(rec.get('Overtime_Check_In')),
-                        'overtime_check_out': get_time(rec.get('Overtime_Check_Out')),
-                        'overtime_before': get_time(rec.get('Overtime_Before')),
-                        'overtime_after': get_time(rec.get('Overtime_After'))
-                    }
-                    timeoff_fields = {
-                        'timeoff_check_out': get_time(rec.get('TimeOff_Check_Out')),
-                        'timeoff_break_before': get_time(rec.get('TimeOff_Break_Before')),
-                        'timeoff_break_after': get_time(rec.get('TimeOff_Break_After'))
-                    }
-
-                is_iot_operations = emp_info.get('role') == 'IoT Operations'
-                schedule_in_time, schedule_out_time, shift_code = '7:30', '16:30', 'N'
-
-                if is_iot_operations:
-                    schedule_table = config.NOCODB_TABLES.get("schedule_shifting")
-                    nocodb_schedule = ClsNocoDBProcessor(config.APP_BASE_ID, schedule_table)
-
-                    # Get employee numeric Id for Unique Key construction
-                    emp_numeric_id = emp_info.get('id')
-                    if emp_numeric_id:
-                        unique_key = f"{rec_date.strftime('%Y-%m-%d')}_{emp_numeric_id}"
-                        where_schedule = f"(Unique Key,eq,{unique_key})"
-                        schedule_response = nocodb_schedule.get_records(limit=5, where=where_schedule)
-                    else:
-                        schedule_response = None
-                    schedule_records = schedule_response.get('list', []) if schedule_response else []
-
-                    if schedule_records:
-                        schedule = schedule_records[0]
-                        if not schedule.get('Shift Data'):
-                            shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-                        else:
-                            shift_names, start_times, end_times = schedule.get('Shift Name', []), schedule.get('Start Time', []), schedule.get('End Time', [])
-                            if shift_names and start_times and end_times:
-                                shift_code = shift_names[0] if isinstance(shift_names, list) else shift_names
-                                start_time_raw, end_time_raw = (start_times[0] if isinstance(start_times, list) else start_times), (end_times[0] if isinstance(end_times, list) else end_times)
-
-                                # Convert "Libur" to "Day Off" for consistency
-                                if 'libur' in shift_code.lower() or str(start_time_raw) == '00:00:00':
-                                    shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-                                else:
-                                    schedule_in_time = ':'.join(str(start_time_raw).split(':')[:2]) if start_time_raw else '7:30'
-                                    schedule_out_time = ':'.join(str(end_time_raw).split(':')[:2]) if end_time_raw else '16:30'
-                            else:
-                                shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-                    else:
-                        shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-                else:
-                    if str(holiday).upper() == 'H' or not (start_time or end_time):
-                        shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
-
-                attendance_data.append({
-                    'employee_id': emp_info.get('employee_id', emp_info.get('nrp', '')), 'full_name': emp_name, 'date': rec_date,
-                    'shift': shift_code, 'shift_code': '', 'shift_label': '', 'schedule_in': schedule_in_time, 'schedule_out': schedule_out_time,
-                    'attendance_code': attendance_code, 'check_in': start_time, 'check_out': end_time, 'keterangan': keterangan,
-                    **overtime_fields, **timeoff_fields, 'holiday_code': holiday, 'is_manual_edit': is_manual_edit
-                })
-
-                current_date += timedelta(days=1)
 
     if attendance_data:
         attendance_data.sort(key=lambda x: (x['full_name'], x['date']))
@@ -3228,14 +3136,21 @@ def _fetch_iot_schedule_by_key(start_date_obj, end_date_obj) -> dict:
                   if cursor.month == 12 else cursor.replace(month=cursor.month + 1))
 
     by_key = {}
+    page_size = 1000
     for ym in prefixes:
-        # One call per month; matches every employee's shift rows for that month.
+        # One paginated query per month; matches every employee's shift rows for that month.
         where = f"(Unique Key,like,{ym}-%)"
-        resp = nocodb_schedule.get_records(limit=2000, where=where)
-        for r in (resp.get('list', []) if resp else []):
-            uk = r.get('Unique Key')
-            if uk:
-                by_key[uk] = r
+        offset = 0
+        while True:
+            resp = nocodb_schedule.get_records(limit=page_size, offset=offset, where=where)
+            batch = resp.get('list', []) if resp else []
+            for r in batch:
+                uk = r.get('Unique Key')
+                if uk:
+                    by_key[uk] = r
+            if len(batch) < page_size:
+                break
+            offset += page_size
     return by_key
 
 
@@ -3348,8 +3263,13 @@ def _build_employee_attendance_data(emp_name: str, emp_info: dict, start_date_ob
     return rows
 
 
-def _build_employee_attendance_rows(emp_name: str, emp_info: dict, start_date_obj, end_date_obj, nocodb_attendance):
-    """Generate per-date attendance rows for one employee. Keterangan comes from Timesheet.Remarks."""
+def _build_employee_attendance_rows(emp_name: str, emp_info: dict, start_date_obj, end_date_obj,
+                                    nocodb_attendance, schedule_by_key: dict = None):
+    """Generate per-date attendance rows for one employee. Keterangan comes from Timesheet.Remarks.
+
+    IoT shift lookups use a batched `schedule_by_key` (one fetch per month) instead of one
+    NocoDB call per day; pass a shared dict when exporting many employees at once.
+    """
     def get_time(val):
         if not val: return ''
         actual_val = val[0] if isinstance(val, list) else val
@@ -3370,11 +3290,10 @@ def _build_employee_attendance_rows(emp_name: str, emp_info: dict, start_date_ob
     timesheet_remarks_by_date = _get_timesheet_remarks_by_date(emp_name, start_date_obj, end_date_obj)
 
     is_iot_operations = emp_info.get('role') == 'IoT Operations'
-    nocodb_schedule = None
-    if is_iot_operations:
-        schedule_table = config.NOCODB_TABLES.get("schedule_shifting")
-        if schedule_table:
-            nocodb_schedule = ClsNocoDBProcessor(config.APP_BASE_ID, schedule_table)
+    emp_numeric_id = emp_info.get('id')
+    if is_iot_operations and emp_numeric_id and schedule_by_key is None:
+        schedule_by_key = _fetch_iot_schedule_by_key(start_date_obj, end_date_obj)
+    schedule_by_key = schedule_by_key or {}
 
     rows = []
     current_date = start_date_obj
@@ -3388,16 +3307,9 @@ def _build_employee_attendance_rows(emp_name: str, emp_info: dict, start_date_ob
 
         schedule_in_time, schedule_out_time, shift_code = '7:30', '16:30', 'N'
 
-        if is_iot_operations and nocodb_schedule is not None:
-            emp_numeric_id = emp_info.get('id')
-            schedule_records = []
-            if emp_numeric_id:
-                unique_key = f"{date_str}_{emp_numeric_id}"
-                where_schedule = f"(Unique Key,eq,{unique_key})"
-                schedule_response = nocodb_schedule.get_records(limit=5, where=where_schedule)
-                schedule_records = schedule_response.get('list', []) if schedule_response else []
-            if schedule_records:
-                schedule = schedule_records[0]
+        if is_iot_operations:
+            schedule = schedule_by_key.get(f"{date_str}_{emp_numeric_id}") if emp_numeric_id else None
+            if schedule:
                 if not schedule.get('Shift Data'):
                     shift_code, schedule_in_time, schedule_out_time = 'Day Off', '', ''
                 else:
@@ -3499,6 +3411,13 @@ async def export_attendance_celerates_csv(
 
     mode = (export_mode or "separate").lower()
 
+    # Batch the IoT shift schedule once for every employee in this export (one fetch
+    # per month instead of one per day per employee).
+    has_iot = any(
+        employee_mapping.get(n, {}).get('role') == 'IoT Operations' for n in target_employees
+    )
+    schedule_by_key = _fetch_iot_schedule_by_key(start_date_obj, end_date_obj) if has_iot else {}
+
     # Combined CSV: all selected employees in a single file
     if mode == "combined":
         combined_rows = []
@@ -3507,7 +3426,7 @@ async def export_attendance_celerates_csv(
                 continue
             emp_info = employee_mapping[emp_name]
             combined_rows.extend(
-                _build_employee_attendance_rows(emp_name, emp_info, start_date_obj, end_date_obj, nocodb_attendance)
+                _build_employee_attendance_rows(emp_name, emp_info, start_date_obj, end_date_obj, nocodb_attendance, schedule_by_key=schedule_by_key)
             )
 
         if not combined_rows:
@@ -3539,7 +3458,7 @@ async def export_attendance_celerates_csv(
                     continue
                 emp_info = employee_mapping[emp_name]
                 employee_csv_data = _build_employee_attendance_rows(
-                    emp_name, emp_info, start_date_obj, end_date_obj, nocodb_attendance
+                    emp_name, emp_info, start_date_obj, end_date_obj, nocodb_attendance, schedule_by_key=schedule_by_key
                 )
                 if not employee_csv_data:
                     continue
@@ -3567,7 +3486,7 @@ async def export_attendance_celerates_csv(
             continue
         emp_info = employee_mapping[emp_name]
         csv_data.extend(
-            _build_employee_attendance_rows(emp_name, emp_info, start_date_obj, end_date_obj, nocodb_attendance)
+            _build_employee_attendance_rows(emp_name, emp_info, start_date_obj, end_date_obj, nocodb_attendance, schedule_by_key=schedule_by_key)
         )
 
     if not csv_data:
