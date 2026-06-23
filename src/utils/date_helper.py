@@ -30,6 +30,17 @@ def get_configured_month_dates():
 
     return start_date, end_date, target_date_for_gsheet
 
+def get_full_month_dates():
+    """Like get_configured_month_dates, but end_date is always the last day of
+    the target month (not capped at today). Useful for generating a whole month
+    of data in a single run."""
+    start_date, _, target_date = get_configured_month_dates()
+
+    next_month_start = (start_date.replace(day=28) + pd.Timedelta(days=4)).replace(day=1)
+    end_date = next_month_start - pd.Timedelta(days=1)
+
+    return start_date, end_date, target_date
+
 def get_month_name_from_date(date):
     month_names = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
     return month_names[date.month - 1]

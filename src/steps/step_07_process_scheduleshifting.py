@@ -1,6 +1,6 @@
 from src import config
 from src.classes.ClsNocoDBProcessor import ClsNocoDBProcessor
-from src.utils.date_helper import get_configured_month_dates, get_month_name_from_date
+from src.utils.date_helper import get_full_month_dates, get_month_name_from_date
 import pandas as pd
 
 def run():
@@ -30,8 +30,9 @@ def run():
             print("No employees found with IoT Operations role.")
             return
 
-        # Get configured month dates
-        start_date, end_date, target_date = get_configured_month_dates()
+        # Generate for the whole target month at once (up to the last day of the
+        # month, e.g. 30 June) instead of only up to today.
+        start_date, end_date, target_date = get_full_month_dates()
         month_name = get_month_name_from_date(target_date)
 
         print(f"Generating schedule shifting data for {month_name} {target_date.year}")

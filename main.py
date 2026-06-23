@@ -58,7 +58,8 @@ def scheduler_loop():
     steps_to_run = [
         "step_03_iot_process_redmine_tasks",
         "step_04_generate_timesheets",
-        "step_05_generate_unique_keys"
+        "step_05_generate_unique_keys",
+        "step_07_process_scheduleshifting"
     ]
 
     interval_hours = 2
