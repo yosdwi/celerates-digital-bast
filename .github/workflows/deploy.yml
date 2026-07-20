@@ -40,7 +40,7 @@ jobs:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USERNAME }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        source: "docker-compose.yml,nginx.conf"
+        source: "docker-compose.yml"
         target: "~/script/digital-bast/"
 
     - name: SSH and Deploy
