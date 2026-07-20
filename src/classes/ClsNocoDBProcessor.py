@@ -61,6 +61,24 @@ class ClsNocoDBProcessor:
             logging.error(f"Error saat membuat record massal: {e}")
             return None
 
+    def bulk_delete_records(self, record_ids: list) -> int:
+        """Bulk delete records by Id. Returns the number of records deleted."""
+        if not record_ids:
+            return 0
+        try:
+            endpoint = f"{self.base_url}/api/v2/tables/{self.table_id}/records"
+            payload = [{"id": rid} for rid in record_ids]
+            response = requests.delete(endpoint, headers=self.headers, json=payload, timeout=180)
+
+            if response.status_code in [200, 201]:
+                return len(record_ids)
+            else:
+                logging.error(f"Gagal menghapus record massal: {response.status_code} - {response.text}")
+                return 0
+        except Exception as e:
+            logging.error(f"Error saat menghapus record massal: {e}")
+            return 0
+
 
     def get_records(self, limit: int = 25, offset: int = 0, where: str = None, fields: str = None, sort: str = None):
         try:
